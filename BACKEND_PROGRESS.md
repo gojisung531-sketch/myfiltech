@@ -1,8 +1,46 @@
-# 백엔드 인수인계 — Backend B2A
+# 백엔드 인수인계 — Backend B2B
+
+- 상태: **B2B 완료, 여기서 중단** (2026-10-22, Asia/Seoul). 개발 DB 백업·B2A migration 적용·실제 관리대장 한 버전의 검토 대기 적재/재실행 검증 완료. 제품 연결·정식 성적서 전환·판정·LLM·새 API·프런트 수정 없음.
+- 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. B2A `ba437ef` 이후 깨끗한 상태에서 시작. 완료 커밋은 이 기록을 포함한 `HEAD` — `feat(backend): stage report register rows with atomic idempotent import` (`git log -1 --oneline`).
+- 변경: `backend/apps/company/{report_preview.py,report_staging.py,management/commands/stage_filtech_reports.py,tests/test_report_staging_service.py}`, `backend/docs/report-register-staging.md`, 이 파일. 기존 모델/마이그레이션 파일·API/평가/매핑 코드는 변경하지 않음.
+
+## 실제 DB와 저장 결과
+
+- 대상 확인: **127.0.0.1:5432/filtech**, 역할 filtech, PostgreSQL 18.6. 적용 전 이력 43개·테이블 37개. 미적용 계획은 `company.0002_report_register_staging`의 CreateModel 두 개뿐임을 코드/`migrate --plan`으로 확인.
+- 복구용 custom-format pg_dump: `backend/.venv/b2b/filtech-before-b2b-20261022-075035-194448.dump` (**190,674바이트**). SHA256 `02f4b109ce1a03b1fcd26f912cc7e0c05b424f18e29e16e7c0e9153bef4a65fb`. 자격 증명은 기존 설정→자식 프로세스 환경으로만 전달. 기존 백업 덮어쓰기 없음.
+- `pg_restore --list` 성공 및 공고 TABLE DATA 목록 확인. 같은 이름의 `.list`, `backup-manifest.json` 보관. **실제 복원 시험은 하지 않음**. DB 삭제/복원/재초기화/flush 없음.
+- 백업 검증 후 `manage.py migrate company 0002_report_register_staging --noinput` 적용 성공. 이후 `migrate --plan` 미적용 작업 없음. 기존 테이블에서 변경된 것은 migration 이력/content type/permission 등록 3종뿐이며 데이터 테이블 해시는 유지됨. 현재 public 테이블 39개.
+- 실제 파일 SHA256: `0257bb970c4198796baae08fa6b2b6dc4bdc5750e530096e7d9a728443009afe`. B1 값과 실행 전후 동일. 실제 입력 경로는 아래 B1 기록 참조. 원본 파일 수정 없음.
+- 실제 dry-run → 성능 **127행**, 재질 **24시료 행**, 총 **151행** 확인 후 apply. 저장된 **ReportRegisterVersion ID 1**, 파일 버전 1개·원본 행 151개. payload 151개 전체를 SHA/시트/행별 B1 객체와 대조해 일치 확인.
+- 151개 모두 관계형 상태 **PENDING/UNKNOWN/UNKNOWN**, `is_lab_accredited`/`is_official_certification`/`original_report_verified` 모두 **null**. B1 payload.review의 false는 원문에 보존하며 관계형 false로 복사하지 않음. 이 수는 제품 수/원본 PDF 검증 수가 아님.
+- 같은 명령 재실행 → **새 버전 0·새 행 0, 기존 버전 1·151행 재사용**. 대기 테이블의 전체 내용 해시(payload·검토 상태·metadata·updated_at 포함) 동일. 실제 DB에 고의 충돌/오류 자료를 만들지 않음.
+- 백업 직전부터 최종 대조까지 Company **1**, Product/TestReport/Certificate/DeliveryRecord **0**, 공고 **1**, 첨부 **4**, 문서 **4**, LLM 호출 로그 **0**의 건수와 내용 해시 보존. 기존 media **4개**의 파일 해시 동일. 검증에서 Company.load()/평가 컨텍스트를 실제 DB에 호출하지 않음.
+- 기존 PostgreSQL PID **5332**, Django 시작 PID **13608**/8000 리스너 **24964** 유지. 재시작·워커 시작 없음. `GET /api/system/status` **200**, llm_configured=false. `--noreload` 서버는 이전 코드 그대로이며 별도 CLI만 새 저장 코드를 사용한다. 대기 목록 HTTP API는 없음.
+
+## 명령·파서·충돌 정책
+
+- `stage_filtech_reports <xlsx>` 기본은 **dry-run**. 쓰기는 `--apply --expected-sha256 <확인한 소문자 SHA256>` 필수. force/update/replace 옵션 없음. 기존 `preview_filtech_reports`는 읽기 전용 유지.
+- 고정 파서 상수: **`filtech-report-register/1`**. 리더 코드에 선언하며 현재 HEAD/시각/사용자 옵션으로 만들지 않음. metadata.parser에 `report_preview.py`·`core/units.py`의 LF 정규화 SHA256과 openpyxl **3.1.5** 버전 보존. B1 반환 payload 형식/해석은 변경하지 않음.
+- 전체 JSON 저장 가능성, 비어 있지 않은 source/fields, 필수 구조·셀 근거·단위/수식 구조·SHA/시트/행·유일 좌표를 쓰기 전에 검증. 전체 원본 객체를 변형 없이 보존. metadata에는 file·시트별 집계/경고·파서 지문만 저장하고 원문 행/번호 목록을 중복 저장하지 않음.
+- 한 파일 전체 `transaction.atomic`, 새 버전/각 행에 `full_clean()` 실행. SHA별 PostgreSQL transaction advisory lock과 기존 버전/행 잠금으로 동시 실행 직렬화. 중간 실패/DB 제약/원본 변경 시 전체 롤백.
+- 동일 SHA·파서/지문·좌표 집합·payload면 기존 자료만 재사용. 이름 변경도 동일 버전이며 표시명/시각/수동 검토 플래그를 수정하지 않음. 파서/지문·payload·좌표 집합 불일치나 일부 행만 있는 버전은 충돌로 중단하고 보충/삭제하지 않음. 다른 SHA는 일반 정책상 새 버전 가능하나 이번 실제 실행은 위 한 버전만 수행.
+- 실제 실행: `& .venv/Scripts/python.exe manage.py stage_filtech_reports '<B1 실제 원본 경로>' --apply --expected-sha256 0257bb970c4198796baae08fa6b2b6dc4bdc5750e530096e7d9a728443009afe`. 실제 apply/재실행은 `.venv/b2b/run_guarded_stage.py`로 외부 socket·LLM provider 호출을 차단한 상태에서 수행하여 두 실행 모두 시도 0회 확인.
+
+## 검사·로컬 자료와 다음 범위
+
+- 신규 적재 검사 **23개**, B1/B2A·단위·B0 차단 회귀 포함 **100 passed**. 별도 `test_filtech_b2a` PostgreSQL 테스트 DB에서만 오류/충돌/동시 실행/롤백 검증 후 자동 제거. 실제 개발 DB를 pytest 대상으로 사용하거나 flush하지 않음. 최소 합성 입력만 사용.
+- 기본 dry-run 무변경, 최초 적재, 재실행/검토 상태/시각 유지, 이름 변경 멱등, 동일 번호 다중 행, 구조·SHA·좌표/JSON 오류, 파서/지문/payload/부분 집합 충돌, 중간 실패 롤백, 적재 중 원본 변경, B1 합성 workbook 왕복, 공식 자료/LLM 분리 및 동일 SHA 동시 실행을 확인.
+- `check` 통과, `makemigrations --check --dry-run` 변경 없음(접속 차단 로컬 runner 사용), 적용 후 실제 `manage.py check`도 문제 0개. 변경 Python 4개 ruff·format 및 `git diff --check` 통과. 기존 자료 누락 실패 8개와 WeasyPrint 문제는 해결/전체 통과로 처리하지 않음.
+- 로컬 Git 제외 자료는 `backend/.venv/b2b/`: `tests.log`, `check.log`, `migration-check.log`, `migrate-plan.log`, `migrate.log`, `migrate-plan-after.log`, `dry-run.json`, `apply.json`, `reapply.json`, `actual-verification.json`, `preservation-verification.json`, `http-status.json`, `guard-results.jsonl`, 백업/목록, 각 단계 테이블 건수/해시·media manifest. 원문 값/번호 목록·비밀값을 stdout/문서/커밋에 복사하지 않음. 백업과 상세 JSON의 Git 제외 확인.
+- 다음은 별도 범위 지정 후 진행: 대기 목록 API/화면, 당사/타사·여재/완제품 검토, 동일 번호의 여러 시료 관계, 제품 연결 기준, 원본 성적서/단위/조건 확인 및 정식 성적서 구조 개편. 제품 연결·정식 전환·규격/등급 호환·고정 PDF page=1 우회 금지. 분석 정확도/원본 성적서 검증 완료로 보고하지 않음. 외부 질문 발송 없음.
+
+---
+
+# 이전 B2A 인수인계 (당시 관찰 기록)
 
 - 상태: **B2A 완료, 여기서 중단** (2026-10-21, Asia/Seoul). 저장 모델·마이그레이션 파일·테스트·설계 문서만 구현. 개발 DB 적용·실제 자료 적재·제품 연결·판정·LLM 호출·새 API 없음. B2B 자동 진행 금지.
 - 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. B1 `597ffb2` 이후 깨끗한 상태에서 시작. B0 환경·기존 데이터·서버 보존.
-- 완료 커밋: 이 기록을 포함한 `HEAD` — `feat(backend): add isolated report register staging models` (`git log -1 --oneline`으로 실제 해시 확인).
+- 완료 커밋: `ba437ef` — `feat(backend): add isolated report register staging models`.
 - 변경: `backend/apps/company/models.py`, `backend/apps/company/migrations/0002_report_register_staging.py`, `backend/apps/company/tests/test_report_register_staging.py`, `backend/docs/report-register-staging.md`, 이 파일만. 프런트·루트 공통 문서·기존 API/serializer·기존 평가/매핑 코드·B1 리더 변경 없음.
 
 ## 저장구조와 기존 엔진 분리

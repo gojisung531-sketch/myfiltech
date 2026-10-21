@@ -20,6 +20,9 @@ from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH, from_excel
 
 from apps.core.units import to_m3h, to_pa
 
+# Bump on interpretation changes; staging also checks source/dependency fingerprints.
+PARSER_VERSION = "filtech-report-register/1"
+
 NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 
