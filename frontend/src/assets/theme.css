@@ -1,0 +1,254 @@
+/* 필텍 공통 테마 — 확정 색상 (Phase 1). Bootstrap 5.0은 CSS 변수를 쓰지 않으므로
+   필요한 컴포넌트만 이 파일에서 덮어쓴다. 색상 값은 아래 변수에서만 정의한다. */
+:root {
+  --ft-primary: #3f647e;
+  --ft-primary-hover: #335368;
+  --ft-primary-soft: #eaf0f5;
+  --ft-bg: #f5f7fa;
+  --ft-surface: #ffffff;
+  --ft-text: #243746;
+  --ft-sidebar: #243746;
+  --ft-muted: #667785;
+  --ft-border: #dce3ea;
+
+  --ft-ok-fg: #26734d;
+  --ft-ok-bg: #eaf5ee;
+  --ft-warn-fg: #8a5700;
+  --ft-warn-bg: #fff4df;
+  --ft-check-fg: #536b82;
+  --ft-check-bg: #edf2f7;
+  --ft-danger-fg: #b54747;
+  --ft-danger-bg: #fcefef;
+
+  --ft-sidebar-width: 15.625rem;
+  --ft-topbar-height: 3.5rem;
+}
+
+body {
+  background-color: var(--ft-bg);
+  color: var(--ft-text);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+a {
+  color: var(--ft-primary);
+}
+a:hover {
+  color: var(--ft-primary-hover);
+}
+.text-muted {
+  color: var(--ft-muted) !important;
+}
+.text-primary {
+  color: var(--ft-primary) !important;
+}
+.bg-primary {
+  background-color: var(--ft-primary) !important;
+}
+.border-primary {
+  border-color: var(--ft-primary) !important;
+}
+.bg-light {
+  background-color: var(--ft-bg) !important;
+}
+.border,
+.card,
+.list-group-item,
+.table > :not(caption) > * > *,
+hr {
+  border-color: var(--ft-border);
+}
+.card {
+  background-color: var(--ft-surface);
+}
+.card-header {
+  background-color: var(--ft-surface);
+  border-bottom-color: var(--ft-border);
+}
+
+/* 버튼 */
+.btn-primary {
+  background-color: var(--ft-primary);
+  border-color: var(--ft-primary);
+  color: #fff;
+}
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active,
+.btn-check:checked + .btn-primary,
+.btn-primary.active {
+  background-color: var(--ft-primary-hover);
+  border-color: var(--ft-primary-hover);
+  color: #fff;
+}
+.btn-primary:focus,
+.btn-outline-primary:focus,
+.btn-outline-secondary:focus {
+  box-shadow: 0 0 0 0.2rem rgba(63, 100, 126, 0.3);
+}
+.btn-primary:disabled,
+.btn-primary.disabled {
+  background-color: var(--ft-primary);
+  border-color: var(--ft-primary);
+}
+.btn-outline-primary {
+  color: var(--ft-primary);
+  border-color: var(--ft-primary);
+}
+.btn-outline-primary:hover,
+.btn-outline-primary:active,
+.btn-outline-primary.active {
+  background-color: var(--ft-primary);
+  border-color: var(--ft-primary);
+  color: #fff;
+}
+.btn-outline-secondary {
+  color: var(--ft-text);
+  border-color: var(--ft-border);
+}
+.btn-outline-secondary:hover,
+.btn-outline-secondary:active,
+.btn-outline-secondary.active {
+  background-color: var(--ft-primary-soft);
+  border-color: var(--ft-primary);
+  color: var(--ft-primary-hover);
+}
+.btn-link {
+  color: var(--ft-primary);
+}
+
+/* 폼 */
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--ft-primary);
+  box-shadow: 0 0 0 0.2rem rgba(63, 100, 126, 0.2);
+}
+.form-control,
+.form-select {
+  border-color: var(--ft-border);
+}
+.form-check-input:checked {
+  background-color: var(--ft-primary);
+  border-color: var(--ft-primary);
+}
+.form-check-input:focus {
+  border-color: var(--ft-primary);
+  box-shadow: 0 0 0 0.2rem rgba(63, 100, 126, 0.2);
+}
+
+/* 탭·페이지네이션·드롭다운·진행 막대 */
+.nav-tabs {
+  border-bottom-color: var(--ft-border);
+}
+.nav-tabs .nav-link {
+  color: var(--ft-muted);
+}
+.nav-tabs .nav-link:hover {
+  color: var(--ft-primary-hover);
+  border-color: var(--ft-border) var(--ft-border) transparent;
+}
+.nav-tabs .nav-link.active {
+  color: var(--ft-primary);
+  font-weight: 600;
+  background-color: var(--ft-surface);
+  border-color: var(--ft-border) var(--ft-border) var(--ft-surface);
+}
+.nav-pills .nav-link.active {
+  background-color: var(--ft-primary);
+}
+.page-link {
+  color: var(--ft-primary);
+}
+.page-item.active .page-link {
+  background-color: var(--ft-primary);
+  border-color: var(--ft-primary);
+}
+.dropdown-item.active,
+.dropdown-item:active,
+.list-group-item.active {
+  background-color: var(--ft-primary);
+  border-color: var(--ft-primary);
+}
+.dropdown-item:hover,
+.dropdown-item:focus {
+  background-color: var(--ft-primary-soft);
+  color: var(--ft-text);
+}
+.progress-bar {
+  background-color: var(--ft-primary);
+}
+
+/* 상태 색상: 충족 / 보완 / 확인 / 높은 위험·오류 (한글 라벨은 각 컴포넌트가 제공) */
+.badge.bg-success {
+  background-color: var(--ft-ok-bg) !important;
+  color: var(--ft-ok-fg) !important;
+  border: 1px solid var(--ft-ok-fg);
+}
+.badge.bg-warning {
+  background-color: var(--ft-warn-bg) !important;
+  color: var(--ft-warn-fg) !important;
+  border: 1px solid var(--ft-warn-fg);
+}
+.badge.bg-info {
+  background-color: var(--ft-check-bg) !important;
+  color: var(--ft-check-fg) !important;
+  border: 1px solid var(--ft-check-fg);
+}
+.badge.bg-danger {
+  background-color: var(--ft-danger-bg) !important;
+  color: var(--ft-danger-fg) !important;
+  border: 1px solid var(--ft-danger-fg);
+}
+.badge.bg-secondary {
+  background-color: var(--ft-check-bg) !important;
+  color: var(--ft-check-fg) !important;
+}
+.text-success {
+  color: var(--ft-ok-fg) !important;
+}
+.text-warning {
+  color: var(--ft-warn-fg) !important;
+}
+.text-info {
+  color: var(--ft-check-fg) !important;
+}
+.text-danger {
+  color: var(--ft-danger-fg) !important;
+}
+.alert-success {
+  background-color: var(--ft-ok-bg);
+  color: var(--ft-ok-fg);
+  border-color: var(--ft-ok-fg);
+}
+.alert-warning,
+.table-warning {
+  background-color: var(--ft-warn-bg);
+  color: var(--ft-warn-fg);
+  border-color: var(--ft-warn-fg);
+  --bs-table-bg: var(--ft-warn-bg);
+}
+.alert-info {
+  background-color: var(--ft-check-bg);
+  color: var(--ft-check-fg);
+  border-color: var(--ft-check-fg);
+}
+.alert-danger {
+  background-color: var(--ft-danger-bg);
+  color: var(--ft-danger-fg);
+  border-color: var(--ft-danger-fg);
+}
+.alert-link {
+  color: inherit;
+  text-decoration: underline;
+}
+
+/* 표: 긴 한글 문장 */
+.table {
+  color: var(--ft-text);
+}
+.table th,
+.table td {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}

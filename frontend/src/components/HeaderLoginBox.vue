@@ -40,9 +40,11 @@ async function logout() {
 <template>
   <div ref="root" class="dropdown">
     <template v-if="auth.isAuthenticated">
-      <button class="btn btn-outline-light btn-sm dropdown-toggle" @click="open = !open">
+      <button class="btn btn-outline-secondary btn-sm dropdown-toggle" @click="open = !open">
         <i class="bi bi-person-circle me-1"></i>{{ auth.user.display_name || auth.user.username }}
-        <span class="badge bg-secondary ms-1">{{ ROLE_LABELS[auth.user.role] }}</span>
+        <span class="badge bg-secondary ms-1 d-none d-sm-inline">{{
+          ROLE_LABELS[auth.user.role]
+        }}</span>
       </button>
       <ul class="dropdown-menu dropdown-menu-end" :class="{ show: open }">
         <li>
@@ -60,7 +62,7 @@ async function logout() {
     </template>
 
     <template v-else>
-      <button class="btn btn-outline-light btn-sm dropdown-toggle" @click="open = !open">
+      <button class="btn btn-outline-secondary btn-sm dropdown-toggle" @click="open = !open">
         <i class="bi bi-shield-lock me-1"></i>관리자 로그인
       </button>
       <div class="dropdown-menu dropdown-menu-end p-3 login-box" :class="{ show: open }">
