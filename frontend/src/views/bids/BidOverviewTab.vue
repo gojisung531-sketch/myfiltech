@@ -37,7 +37,15 @@ const requirements = ref([])
 const loading = ref(true)
 const loadError = ref('')
 const groupBy = ref('category')
-const viewer = ref({ documentId: null, page: 0, quote: '' })
+const emptyViewer = {
+  documentId: null,
+  page: 0,
+  quote: '',
+  kind: 'attachment',
+  title: '',
+  text: '',
+}
+const viewer = ref({ ...emptyViewer })
 
 async function load() {
   loading.value = true
@@ -113,8 +121,27 @@ const overview = computed(() => {
 })
 
 function openSource(r) {
+  // source_attachment는 첨부 ID다. 문서 ID는 첨부 목록의 document_id에서만 가져온다.
   const documentId = attachmentDocs.value[r.source_attachment]
-  if (documentId) viewer.value = { documentId, page: r.source_page || 0, quote: r.source_quote }
+  if (documentId) {
+    viewer.value = {
+      documentId,
+      page: r.source_page || 0,
+      quote: r.source_quote || '',
+      kind: 'requirement_source',
+      title: r.title,
+      text: r.requirement_text,
+    }
+  } else {
+    toast.show(
+      '이 요구사항의 출처 첨부를 찾을 수 없습니다(첨부가 삭제되었거나 연결되지 않음).',
+      'warning',
+    )
+  }
+}
+
+function openAttachment(a) {
+  viewer.value = { ...emptyViewer, documentId: a.document_id, title: a.display_name }
 }
 
 async function download(attachment) {
@@ -171,7 +198,7 @@ async function download(attachment) {
               <button
                 class="btn btn-sm btn-link"
                 :aria-label="`${a.display_name} 보기`"
-                @click="viewer = { documentId: a.document_id, page: 0, quote: '' }"
+                @click="openAttachment(a)"
               >
                 <i class="bi bi-eye"></i>
               </button>
@@ -332,7 +359,10 @@ async function download(attachment) {
       :document-id="viewer.documentId"
       :page="viewer.page"
       :quote="viewer.quote"
-      @close="viewer = { documentId: null, page: 0, quote: '' }"
+      :kind="viewer.kind"
+      :context-title="viewer.title"
+      :context-text="viewer.text"
+      @close="viewer = { ...emptyViewer }"
     />
   </div>
 </template>

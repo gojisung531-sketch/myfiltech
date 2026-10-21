@@ -13,6 +13,7 @@ import DocumentOffcanvas from '@/components/DocumentOffcanvas.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import RiskDot from '@/components/RiskDot.vue'
 import VerdictBadge from '@/components/VerdictBadge.vue'
+import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import { errorMessage } from '@/utils/errors'
 import { formatDateTime } from '@/utils/format'
@@ -35,11 +36,22 @@ const EVIDENCE_LABELS = {
 }
 
 const toast = useToastStore()
+const auth = useAuthStore()
 const rows = ref([])
 const loading = ref(true)
 const expanded = ref(new Set())
 const filters = reactive({ verdict: '', highOnly: false, modifiedOnly: false })
-const viewer = ref({ documentId: null, page: 0, quote: '' })
+const emptyViewer = {
+  documentId: null,
+  page: 0,
+  quote: '',
+  kind: 'attachment',
+  title: '',
+  text: '',
+  note: '',
+}
+const viewer = ref({ ...emptyViewer })
+const loadError = ref('')
 const editor = reactive({
   show: false,
   row: null,
@@ -51,15 +63,21 @@ const editor = reactive({
 const history = reactive({ show: false, row: null, items: [] })
 
 async function load() {
+  loadError.value = ''
   try {
     rows.value = await listRequirementsWithEvaluation(props.bid.id)
   } catch (err) {
-    toast.error(errorMessage(err))
+    loadError.value = errorMessage(err, '요구사항과 판정을 불러오지 못했습니다.')
   } finally {
     loading.value = false
   }
 }
 onMounted(load)
+
+function reload() {
+  loading.value = true
+  load()
+}
 
 const evaluated = computed(() => rows.value.filter((r) => r.evaluation))
 const summary = computed(() => {
@@ -87,9 +105,27 @@ function toggle(id) {
   expanded.value = next
 }
 
-function openEvidence(e) {
-  if (e.document_id) viewer.value = { documentId: e.document_id, page: e.page || 0, quote: e.quote }
-  else toast.show('연결된 원본 문서가 없습니다.', 'warning')
+function openEvidence(e, row) {
+  if (!e.document_id) {
+    toast.show(
+      '이 근거에는 연결된 원본 문서가 없습니다(문서 ID가 저장되지 않음). 근거 라벨과 인용문만 확인할 수 있습니다.',
+      'warning',
+    )
+    return
+  }
+  const fromBid = e.type === 'bid_quote'
+  viewer.value = {
+    documentId: e.document_id,
+    page: e.page || 0,
+    quote: e.quote || '',
+    kind: fromBid ? 'requirement_source' : 'reference',
+    title: row.title,
+    text: fromBid ? row.requirement_text : e.label,
+    // 공고 원문 근거 외에는 서버가 위치를 고정값으로 기록하는 유형이 있어 위치를 검증된 값으로 보지 않는다.
+    note: fromBid
+      ? ''
+      : '위치는 서버가 기록한 참조값이며 원문 대조가 필요합니다(고정값일 수 있음).',
+  }
 }
 
 function openEditor(row) {
@@ -169,8 +205,38 @@ function reevaluate(row) {
 <template>
   <div>
     <div v-if="loading" class="text-center py-5"><span class="spinner-border"></span></div>
+    <div
+      v-else-if="loadError"
+      class="alert alert-danger d-flex align-items-center gap-2"
+      role="alert"
+    >
+      <i class="bi bi-exclamation-octagon"></i>
+      <span class="flex-grow-1">{{ loadError }}</span>
+      <button class="btn btn-sm btn-outline-secondary" @click="reload">다시 시도</button>
+    </div>
     <template v-else>
-      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <div v-if="!rows.length" class="alert alert-info small" role="status">
+        <template v-if="bid.processing_status === 'EXTRACTING'">
+          요구조건 추출이 진행 중입니다. 완료되면 이 화면에서 요구사항과 판정을 볼 수 있습니다.
+        </template>
+        <template v-else-if="bid.processing_status === 'FAILED'">
+          처리에 실패해 저장된 요구사항이 없을 수 있습니다. 상세 오류를 확인하세요.
+        </template>
+        <template v-else-if="bid.processing_status === 'DRAFT'">
+          아직 요구조건 추출을 실행하지 않아 판정할 요구사항이 없습니다.
+          <template v-if="auth.isAdmin">
+            관리자는
+            <router-link :to="`/admin/bids/${bid.id}/edit`">공고 편집 화면</router-link>에서 추출을
+            실행할 수 있습니다.
+          </template>
+          <template v-else>관리자가 추출을 실행하면 이 화면에 표시됩니다.</template>
+        </template>
+        <template v-else>
+          저장된 요구사항이 없어 판정할 대상이 없습니다. 추출 누락 가능성이 있으니 첨부 원문을
+          확인하세요.
+        </template>
+      </div>
+      <div v-if="rows.length" class="d-flex flex-wrap align-items-center gap-2 mb-3">
         <span class="badge bg-success fs-6 fw-normal">충족 {{ summary.MET }}</span>
         <span class="badge bg-warning text-dark fs-6 fw-normal"
           >보완 필요 {{ summary.NEEDS_SUPPLEMENT }}</span
@@ -203,10 +269,17 @@ function reevaluate(row) {
         </div>
       </div>
 
-      <div v-if="!evaluated.length" class="alert alert-info small">
-        아직 판정하지 않았습니다. 상단의 <strong>판정 실행</strong>을 누르세요.
+      <div v-if="rows.length && !evaluated.length" class="alert alert-info small" role="status">
+        <template v-if="busy">요구사항은 저장되어 있고 판정이 진행 중입니다.</template>
+        <template v-else>
+          요구사항 {{ rows.length }}건이 저장되어 있지만 아직 판정하지 않았습니다. 상단의
+          <strong>판정 실행</strong>으로 시작할 수 있습니다(LLM 설정이 필요할 수 있습니다).
+        </template>
       </div>
-      <EmptyState v-if="!visible.length" message="조건에 맞는 요구사항이 없습니다." />
+      <EmptyState
+        v-if="rows.length && !visible.length"
+        message="선택한 필터에 맞는 요구사항이 없습니다. 필터를 바꿔 보세요."
+      />
 
       <div class="list-group">
         <div v-for="row in visible" :key="row.id" class="list-group-item">
@@ -278,7 +351,7 @@ function reevaluate(row) {
                     <button
                       class="btn btn-link btn-sm p-0 text-start small"
                       :class="{ 'text-body text-decoration-none': !e.document_id }"
-                      @click="openEvidence(e)"
+                      @click="openEvidence(e, row)"
                     >
                       {{ e.label }}<span v-if="e.page"> p.{{ e.page }}</span>
                     </button>
@@ -497,7 +570,11 @@ function reevaluate(row) {
       :document-id="viewer.documentId"
       :page="viewer.page"
       :quote="viewer.quote"
-      @close="viewer = { documentId: null, page: 0, quote: '' }"
+      :kind="viewer.kind"
+      :context-title="viewer.title"
+      :context-text="viewer.text"
+      :position-note="viewer.note"
+      @close="viewer = { ...emptyViewer }"
     />
   </div>
 </template>

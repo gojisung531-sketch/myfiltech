@@ -22,7 +22,7 @@ const emit = defineEmits(['evaluate', 'changed'])
 const toast = useToastStore()
 const data = ref(null)
 const loadError = ref('')
-const viewer = ref(null)
+const viewer = ref(null) // { documentId, title, text }
 const suggest = ref(null) // item whose product changed → offer re-evaluation
 
 async function load() {
@@ -83,9 +83,19 @@ function reevaluateItem() {
   emit('evaluate', { keepModified: true, requirementIds: ids })
 }
 
-function open(target) {
-  if (target.document_id) viewer.value = target.document_id
-  else toast.show('연결된 원본 문서가 없습니다.', 'warning')
+function open(target, kind, row) {
+  if (target.document_id) {
+    viewer.value = {
+      documentId: target.document_id,
+      title: `${row.title} — ${kind}`,
+      text: target.label,
+    }
+  } else {
+    toast.show(
+      `이 ${kind}에는 연결된 원본 문서가 없습니다(문서 ID가 저장되지 않음). 자료 목록에서 직접 확인하세요.`,
+      'warning',
+    )
+  }
 }
 
 const hasRefs = (row) =>
@@ -201,7 +211,7 @@ const hasRefs = (row) =>
                       v-for="r in row.test_reports"
                       :key="r.id"
                       class="btn btn-link btn-sm p-0 d-block text-start small text-break"
-                      @click="open(r)"
+                      @click="open(r, '시험성적서', row)"
                     >
                       {{ r.label }}
                     </button>
@@ -212,7 +222,7 @@ const hasRefs = (row) =>
                       v-for="c in row.certificates"
                       :key="c.id"
                       class="btn btn-link btn-sm p-0 d-block text-start small text-break"
-                      @click="open(c)"
+                      @click="open(c, '인증', row)"
                     >
                       {{ c.label }}
                       <span v-if="c.status === 'EXPIRED'" class="badge bg-danger">만료</span>
@@ -227,7 +237,7 @@ const hasRefs = (row) =>
                       v-for="d in row.delivery_records"
                       :key="d.id"
                       class="btn btn-link btn-sm p-0 d-block text-start small text-break"
-                      @click="open(d)"
+                      @click="open(d, '납품실적', row)"
                     >
                       {{ d.label }}
                     </button>
@@ -256,7 +266,14 @@ const hasRefs = (row) =>
       </template>
     </BaseModal>
 
-    <DocumentOffcanvas :document-id="viewer" @close="viewer = null" />
+    <DocumentOffcanvas
+      :document-id="viewer?.documentId ?? null"
+      kind="reference"
+      :context-title="viewer?.title || ''"
+      :context-text="viewer?.text || ''"
+      position-note="이 화면은 자료의 위치(페이지)를 받지 않아 문서의 처음부터 표시합니다."
+      @close="viewer = null"
+    />
   </div>
 </template>
 
