@@ -1,8 +1,47 @@
-# 백엔드 인수인계 — Backend B1
+# 백엔드 인수인계 — Backend B2A
+
+- 상태: **B2A 완료, 여기서 중단** (2026-10-21, Asia/Seoul). 저장 모델·마이그레이션 파일·테스트·설계 문서만 구현. 개발 DB 적용·실제 자료 적재·제품 연결·판정·LLM 호출·새 API 없음. B2B 자동 진행 금지.
+- 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. B1 `597ffb2` 이후 깨끗한 상태에서 시작. B0 환경·기존 데이터·서버 보존.
+- 완료 커밋: 이 기록을 포함한 `HEAD` — `feat(backend): add isolated report register staging models` (`git log -1 --oneline`으로 실제 해시 확인).
+- 변경: `backend/apps/company/models.py`, `backend/apps/company/migrations/0002_report_register_staging.py`, `backend/apps/company/tests/test_report_register_staging.py`, `backend/docs/report-register-staging.md`, 이 파일만. 프런트·루트 공통 문서·기존 API/serializer·기존 평가/매핑 코드·B1 리더 변경 없음.
+
+## 저장구조와 기존 엔진 분리
+
+- `ReportRegisterVersion`: SHA256(unique, 소문자 64자리 검증/DB 제약), 최초 표시 파일명, 명시적 parser_version, source_metadata(JSON callable default=dict). 동일 SHA는 이름/경로/파서 변경만으로 두 버전이 될 수 없음. 다른 SHA의 개정본은 별도 버전으로 보존.
+- `ReportRegisterRow`: 파일 버전 FK(PROTECT)·시트·행의 복합 고유키, B1 전체 payload(JSON default=dict), 검토 PENDING·소유 UNKNOWN·시험대상 UNKNOWN 기본값. 소유는 당사/타사/불명, 대상은 여재/완제품/기타/불명 구분 가능. 빈 시트와 Excel 행 범위 밖 좌표는 DB 제약으로 거절.
+- 성적서번호·No.·모델명을 고유키로 사용하지 않음. 번호 공란/중복·다중 시료·병합 기준 셀·단위/변환식/조건/수식 캐시·매핑 밖 값·규격 원문은 payload에 그대로 보존. ISO 29463 자동 치환 없음.
+- 공인시험(`is_lab_accredited`), 공식인증(`is_official_certification`), 원본 성적서 대조(`original_report_verified`)는 **서로 다른 nullable Boolean, 기본 null**. B1 payload의 원본 대조 false를 관계형 상태로 자동 복사하지 않음.
+- Product/TestReport/Certificate FK·등록 시그널·적재/승인/승격 서비스·API·PDF 연결 없음. 기존 EvaluationContext 조회는 새 대기 모델을 읽지 않으며 분류/인증 플래그만 지정해도 승격되지 않음.
+- `clean()`은 출처 SHA/시트/행 충돌과 잘못된 payload/source 객체를 거절하며 원문을 고치지 않음. 일반 ORM save/bulk_create는 full_clean을 자동 실행하지 않으므로 B2B는 별도 검증 필수. 무조건 append-only를 강제하는 이력 엔진은 만들지 않음.
+- 같은 SHA를 새 파서로 재해석할 때 기존 parser_version/payload를 덮어쓰지 않고 별도 버전 표시의 Git 제외 미리보기로 남긴 뒤 DB 저장 보류. 다중 파서 실행의 동시 저장은 후속 설계. 자세한 필드·B1 대응·개정 정책은 `backend/docs/report-register-staging.md` 참조.
+
+## 검사와 실제 DB 미적용 확인
+
+- 새 migration `company.0002_report_register_staging`은 **CreateModel 두 개뿐**이며 기존 TestReport/규격군/Boolean 기본값/평가 규칙 변경이나 데이터 마이그레이션 없음.
+- 생성 및 `check`, `makemigrations --check --dry-run`은 로컬 `.venv/b2a/offline_manage.py`로 실행. 해당 프로세스에만 dummy DB backend를 지정하고 DB 연결·Python socket 접속을 예외로 차단. 설정 파일/.env 변경 없이 실행했으며 접속 시도 **0회**. `check` 문제 0개, 마이그레이션 누락 검사 `No changes detected`.
+- 신규 저장구조 **21개 테스트**: SHA/이름/파서 충돌, 좌표 중복/범위, 다른 행·시트의 동일 성적서번호, 공란 식별정보, 다른 SHA의 같은 좌표, JSON/병합/조건/단위/캐시 왕복, 독립적인 JSON 기본값, 미확인 null과 명시적 false, 보호 삭제, 잘못된 출처/FK, 평가 자료와의 분리.
+- B1 미리보기·단위 유틸·B0 회사자료 차단 회귀 포함 **77 passed**. 실제 제품 fixture/기업 엑셀/상세 JSON 사용 없음. 기존 가상 회사자료 복원/적재 없음.
+- 테스트는 전용 PostgreSQL **`test_filtech_b2a`**에서 새 migration과 저장을 검증한 뒤 pytest가 DB를 제거함. 모델 테스트는 접속 DB가 `test_` 이름이며 current_database()와 일치하는지도 확인. 개발 DB 재사용/flush 없음. Python 외부 socket 접속 시도 0회(로컬 PostgreSQL 테스트 연결은 libpq 사용).
+- 명령: `& .venv/Scripts/python.exe .venv/b2a/run_tests.py apps/company/tests/test_report_register_staging.py apps/company/tests/test_report_preview.py apps/core/tests/test_units.py apps/documents/tests/test_documents_api.py::test_load_initial_data_endpoint apps/documents/tests/test_documents_api.py::test_company_seed_command_is_blocked --tb=short`.
+- 기존 제품/정식 성적서/인증에 같은 모델명·번호가 있어도 대기 행 저장 전후 값 불변, 평가 컨텍스트에는 기존 정식 자료만 조회됨. 빈 평가 컨텍스트가 `Company.load()`로 만드는 회사 singleton은 테스트에서 구분하여 확인. 실제 판정 실행 없음.
+- 개발 DB 스키마/마이그레이션 이력을 읽기 전용으로 대조: 시작/종료 모두 **43개 적용 이력·37개 public 테이블**, 새 migration 적용 이력/대기 테이블 **없음**. 개발 DB에는 `migrate`를 실행하지 않음. 병행 UI의 로그인·공고 데이터 변화는 전체 불변이라고 주장하지 않으며 손대지 않음.
+- 변경 Python 3개 파일(모델/마이그레이션/테스트)의 ruff·format 검사와 `git diff --check` 통과. 기존 자료 누락 실패 8개와 WeasyPrint DLL 문제는 이번에 해결/전체 통과 처리하지 않음.
+- 로컬 검사 도구/로그: `backend/.venv/b2a/{offline_manage.py,b2a_test_settings.py,run_tests.py,tests.log,check.log,migration-check.log,dev-schema-before.json,dev-schema-after.json}`. 스키마 대조 파일에는 테이블명/마이그레이션명만 저장. 전부 Git 제외이며 비밀값/기업 원문 커밋 없음.
+- 기존 PostgreSQL PID **5332**(5432), Django 시작 PID **13608**/리스너 PID **24964**(8000) 유지, 재시작·워커 시작 없음. **실행 중인 --noreload 서버는 새 모델을 아직 반영하지 않음.** B2A 저장 기능이 실제 서버에서 사용 가능하다고 보고하지 않음.
+
+## B2B 조건과 확인 질문
+
+- **별도 요청 후** 개발 DB 적용 대상/보존 계획을 확인하고 migration 적용·서버 반영을 조정한다. 그다음 원본 SHA/파서 버전·행 건수·전체 payload/source 일치를 검증하고 멱등성/충돌 중단/transaction이 있는 전용 대기 적재 경로를 만든다. 아직 적재 명령이 없으며 기존 B1 명령은 읽기 전용 그대로임.
+- 대기 자료 저장과 정식 성적서/제품 연결은 다른 단계다. 기존 TestReport 번호 고유 제약/단일 product, mapping.py의 모델명 자동 연결·공식인증 추론, evidence.py의 고정 page=1을 그대로 우회 사용하면 안 됨. 규격군/등급 호환성과 기존 Boolean 변경 영향도 후속 검토. 루트 specs/README 동기화 제안은 설계 문서에 남겼으며 이번 범위 밖 파일은 수정하지 않음.
+- 필텍 확인 질문: 당사/타사·여재/완제품을 구분할 근거는 무엇인가? 같은 번호의 여러 시료는 어떤 관계인가? 모델 연결 기준은 무엇인가? 원본 성적서와 단위/시험조건을 확인할 자료는 무엇인가? 추정 답변이나 외부 질문 발송 없음.
+
+---
+
+# 이전 B1 인수인계 (당시 관찰 기록)
 
 - 상태: **B1 완료, 여기서 중단** (2026-10-21, Asia/Seoul). 읽기 전용 관리대장 미리보기만 구현. B2·DB 적재·제품 연결·판정·LLM 호출은 진행하지 않음.
 - 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. 시작 시 깨끗함. B0 `43a85d3`을 보존하고 환경 재설치·초기화 없이 진행.
-- 완료 커밋: 이 기록을 포함한 `HEAD` — `feat(backend): add read-only Filtech report register preview` (`git log -1 --oneline`으로 해시 확인).
+- 완료 커밋: `597ffb2` — `feat(backend): add read-only Filtech report register preview`.
 - 변경: `backend/apps/company/report_preview.py`, `backend/apps/company/management/{__init__.py,commands/__init__.py,commands/preview_filtech_reports.py}`, `backend/apps/company/tests/test_report_preview.py`, 이 파일. 프런트·루트 공통 문서·모델·마이그레이션·API 변경 없음.
 
 ## B1 결과와 데이터 문제
