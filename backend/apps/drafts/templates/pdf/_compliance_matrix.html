@@ -1,0 +1,26 @@
+<table class="meta">
+  <tr><td>공고</td><td>[{{ c.header.notice_no|default:"-" }}] {{ c.header.bid_title }}</td></tr>
+  <tr><td>수요기관</td><td>{{ c.header.buyer_org|default:"-" }}</td></tr>
+  <tr><td>작성</td><td>{{ c.header.company }} {{ c.header.prepared_by }} · {{ c.header.prepared_at }}</td></tr>
+</table>
+<table>
+  <thead>
+    <tr>
+      <th style="width: 8mm">No</th><th style="width: 28mm">품목</th><th style="width: 18mm">구분</th>
+      <th style="width: 50mm">요구사항</th><th style="width: 40mm">제안 사양</th><th style="width: 17mm">충족 여부</th>
+      <th>응답</th><th style="width: 34mm">근거</th><th style="width: 20mm">비고</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in c.rows %}
+    <tr class="{% if r.risk == 'HIGH' %}high{% endif %}">
+      <td>{{ r.no }}</td><td>{{ r.item }}</td><td>{{ r.category }}</td>
+      <td>{{ r.requirement }}{% if r.clause %}<div class="small">{{ r.clause }}</div>{% endif %}</td>
+      <td>{{ r.offered }}</td>
+      <td class="v v-{{ r.compliance|cut:' ' }}">{{ r.compliance }}</td>
+      <td>{{ r.response }}</td><td class="small">{{ r.evidence }}</td><td>{{ r.remark }}</td>
+    </tr>
+  {% empty %}<tr><td colspan="9" class="muted">요구사항이 없습니다.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>

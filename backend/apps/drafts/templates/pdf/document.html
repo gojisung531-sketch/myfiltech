@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>{{ title }}</title>
+<style>
+@font-face { font-family: "Noto Sans KR"; src: url("{{ font_dir }}/NotoSansKR-Regular.otf"); font-weight: 400; }
+@font-face { font-family: "Noto Sans KR"; src: url("{{ font_dir }}/NotoSansKR-Bold.otf"); font-weight: 700; }
+@page {
+  size: A4;
+  margin: 20mm 14mm 20mm 14mm;
+  @top-left { content: {{ header_left|safe }}; font-size: 8pt; color: #555; }
+  @top-center { content: string(doctitle); font-size: 8pt; color: #555; }
+  @top-right { content: {{ header_right|safe }}; font-size: 8pt; color: #555; }
+  @bottom-left { content: {{ footer_left|safe }}; font-size: 6.5pt; color: #777; width: 80%; }
+  @bottom-right { content: counter(page) " / " counter(pages); font-size: 8pt; color: #555; }
+}
+@page landscape { size: A4 landscape; }
+@page cover { @top-left { content: none; } @top-center { content: none; } @top-right { content: none; } }
+html { font-family: "Noto Sans KR", sans-serif; font-size: 9pt; color: #212529; }
+body { margin: 0; }
+h1 { font-size: 15pt; margin: 0 0 4mm; string-set: doctitle content(); border-bottom: 2px solid #0d6efd; padding-bottom: 2mm; }
+h2 { font-size: 11pt; margin: 5mm 0 2mm; }
+p { margin: 0 0 2mm; line-height: 1.5; }
+section { page-break-before: always; }
+section.first { page-break-before: auto; }
+section.landscape { page: landscape; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 4mm; table-layout: fixed; }
+table.meta { table-layout: auto; }
+td { overflow-wrap: anywhere; }
+thead { display: table-header-group; }
+th, td { border: 0.5pt solid #adb5bd; padding: 1.2mm 1.5mm; vertical-align: top; text-align: left; }
+th { background: #e9ecef; font-weight: 700; }
+tr { page-break-inside: avoid; }
+tr.high td:first-child { border-left: 3pt solid #dc3545; }
+.small { font-size: 7.5pt; color: #555; }
+.muted { color: #6c757d; }
+.meta td { border: none; padding: 0.6mm 2mm 0.6mm 0; }
+.meta td:first-child { color: #6c757d; width: 28mm; }
+.v { font-weight: 700; white-space: nowrap; }
+.v-MET, .v-충족 { color: #198754; }
+.v-NEEDS_SUPPLEMENT, .v-보완필요 { color: #fd7e14; }
+.v-NEEDS_CONFIRMATION, .v-확인필요 { color: #0d6efd; }
+.high-risk { color: #dc3545; font-weight: 700; }
+.box { border: 0.5pt solid #adb5bd; padding: 3mm; margin-bottom: 4mm; }
+.cover { page: cover; text-align: center; padding-top: 60mm; }
+.cover h1 { border: none; font-size: 22pt; string-set: none; }
+.cover .bid { font-size: 13pt; margin: 8mm 0; }
+.disclaimer { margin-top: 40mm; font-size: 8pt; color: #6c757d; }
+.status-DONE { color: #198754; } .status-NA { color: #6c757d; }
+ol.questions > li { margin-bottom: 4mm; }
+</style>
+</head>
+<body>
+{% if cover %}
+<div class="cover">
+  {% if logo %}<img src="{{ logo }}" alt="" style="max-height: 18mm"><br>{% endif %}
+  <h1>{{ title }}</h1>
+  <div class="bid">{{ bid.title }}</div>
+  <table class="meta" style="width: auto; margin: 0 auto;">
+    <tr><td>공고번호</td><td>{{ bid.notice_no|default:"-" }}</td></tr>
+    <tr><td>수요기관</td><td>{{ bid.buyer_org|default:"-" }}</td></tr>
+    <tr><td>입찰 마감</td><td>{{ bid.bid_close_at|date:"Y-m-d H:i"|default:"-" }}</td></tr>
+    <tr><td>작성</td><td>{{ company.name }}</td></tr>
+  </table>
+  <p class="disclaimer">{{ disclaimer }}</p>
+</div>
+{% endif %}
+{% for section in sections %}
+<section class="{% if forloop.first and not cover %}first{% endif %}{% if section.type == 'COMPLIANCE_MATRIX' %} landscape{% endif %}">
+  <h1>{{ section.label }}{% if version %} <span class="small">v{{ version }}</span>{% endif %}</h1>
+  {% if section.type == "COMPLIANCE_MATRIX" %}{% include "pdf/_compliance_matrix.html" with c=section.content %}
+  {% elif section.type == "BID_CHECKLIST" %}{% include "pdf/_checklist.html" with c=section.content %}
+  {% elif section.type == "TECHNICAL_QUERY" %}{% include "pdf/_technical_query.html" with c=section.content %}
+  {% elif section.type == "REVIEW_REPORT" %}{% include "pdf/_review_report.html" with c=section.content %}
+  {% elif section.type == "EVALUATIONS" %}{% include "pdf/_evaluations.html" with rows=section.content %}
+  {% endif %}
+</section>
+{% endfor %}
+</body>
+</html>

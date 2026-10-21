@@ -1,0 +1,16 @@
+{% for s in c.sections %}
+<h2>{{ s.title }}</h2>
+<table>
+  <thead><tr><th style="width: 8mm">상태</th><th>항목</th><th style="width: 28mm">기한</th><th style="width: 20mm">담당</th><th style="width: 18mm">판정</th><th style="width: 45mm">비고</th></tr></thead>
+  <tbody>
+  {% for i in s.items %}
+    <tr>
+      <td class="status-{{ i.status }}">{% if i.status == 'DONE' %}☑{% elif i.status == 'NA' %}N/A{% else %}☐{% endif %}</td>
+      <td>{{ i.text }}</td><td>{{ i.due }}</td><td>{{ i.owner }}</td>
+      <td class="v v-{{ i.verdict|cut:' ' }}">{{ i.verdict }}</td><td>{{ i.note }}</td>
+    </tr>
+  {% empty %}<tr><td colspan="6" class="muted">해당 항목 없음</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endfor %}

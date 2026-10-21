@@ -1,0 +1,157 @@
+{
+  "notice": {
+    "notice_no": "20230323830",
+    "title": "[울산발전본부] GT#7,8 입구 공기 1차 필터(Pulse Filter) 구매",
+    "buyer_org": "한국동서발전(주)울산발전본부",
+    "contracting_org": "부산지방조달청",
+    "plant_name": "울산발전본부",
+    "is_power_plant": true,
+    "bid_method": "제한(총액), 계약이행능력심사",
+    "item_category_code": "4016150501",
+    "item_category_name": "공기여과기",
+    "budget_krw": 370062000,
+    "estimated_price_krw": 336420000,
+    "bid_open_at": "2023/04/03 10:00",
+    "bid_close_at": "2023-04-05T12:00:00+09:00",
+    "opening_at": "2023-04-05 13:00",
+    "qualification_deadline_at": "2023-04-04T18:00:00+09:00",
+    "delivery_terms": "계약 후 150일 이내",
+    "delivery_place": "울산발전본부 자재팀 자재창고 하차도",
+    "warranty_terms": "2년",
+    "summary": "울산발전본부 GT#7,8 1차 Pulse Filter(원통·원추 각 1,400EA) 제조 구매. 실적제한(EN779 F9 이상 GT 입구필터)."
+  },
+  "items": [
+    {
+      "item_no": "1",
+      "name": "GT Inlet Air Pulse Filter Cartridge (Cylindrical)",
+      "spec_text": "Cylindrical Type, Synthetic Fiber OD324 x L660mm",
+      "filter_type": "CARTRIDGE_PULSE",
+      "dimension_json": "{\"dia\": 324, \"len\": 660}",
+      "quantity": 1400,
+      "unit": "EA",
+      "material_no": "2190164",
+      "source": {"attachment": "정비용 기자재 구매규격서.hwp", "page": 0, "quote": "OD324 x L660mm"}
+    },
+    {
+      "item_no": "2",
+      "name": "GT Inlet Air Pulse Filter Cartridge (Conical)",
+      "spec_text": "Conical Type, Synthetic Fiber, OD445 x OD324 x L660mm",
+      "filter_type": "CARTRIDGE_PULSE",
+      "dimension_json": "",
+      "quantity": 1400,
+      "unit": "EA",
+      "material_no": "2190166",
+      "source": {"attachment": "정비용 기자재 구매규격서.hwp", "page": 0, "quote": "OD445 x OD324 x L660mm"}
+    }
+  ],
+  "requirements": [
+    {
+      "item_no": "",
+      "category": "TRACK_RECORD",
+      "title": "실적제한",
+      "requirement_text": "최근 10년 이내 단일 계약 건으로 추정가격 112,140,000원 이상 EN779 2012 F9 Class 이상 가스터빈 공기 입구필터 제조 실적",
+      "normalized_json": "{\"period_years\": 10, \"min_amount_krw\": 112140000, \"single_contract\": true, \"spec_condition\": \"EN779 F9 이상 가스터빈 공기 입구필터\", \"grade\": {\"standard\": \"EN779\", \"class\": \"F9\"}, \"power_plant_only\": true}",
+      "is_mandatory": true,
+      "source": {"attachment": "20230342721-00_1679533861887_공고서_212360170.hwp", "page": 0, "quote": "최근 10년 이내 단일 계약 건으로 추정가격의 \\112,140,000원 이상"}
+    },
+    {
+      "item_no": "",
+      "category": "CERTIFICATION",
+      "title": "직접생산확인증명서",
+      "requirement_text": "공기여과기(4016150501) 직접생산확인증명서",
+      "normalized_json": "{\"cert_type\": \"DIRECT_PRODUCTION\", \"product_code\": \"4016150501\"}",
+      "is_mandatory": true,
+      "source": {"attachment": "20230342721-00_1679533861887_공고서_212360170.hwp", "page": 0, "quote": "직접생산확인증명서[공기여과기(4016150501)"}
+    },
+    {
+      "item_no": "",
+      "category": "CERTIFICATION",
+      "title": "나라장터 물품 등록",
+      "requirement_text": "공기여과기(4016150501)를 제조 물품으로 입찰참가 등록",
+      "normalized_json": "{\"cert_type\": \"G2B_ITEM\", \"product_code\": \"4016150501\"}",
+      "is_mandatory": true,
+      "source": {"attachment": "20230342721-00_1679533861887_공고서_212360170.hwp", "page": 0, "quote": "공기여과기(4016150501)를 제조 물품으로 입찰참가 등록한 자"}
+    },
+    {
+      "item_no": "1",
+      "category": "DIMENSION",
+      "title": "원통형 치수",
+      "requirement_text": "OD324 x L660mm",
+      "normalized_json": "{\"dia\": 324, \"len\": 660, \"raw\": \"OD324 x L660mm\"}",
+      "is_mandatory": true,
+      "source": {"attachment": "정비용 기자재 구매규격서.hwp", "page": 0, "quote": "Size : OD324 x L660mm"}
+    },
+    {
+      "item_no": "2",
+      "category": "DIMENSION",
+      "title": "원추형 치수",
+      "requirement_text": "OD445 x OD324 x L660mm",
+      "normalized_json": "",
+      "is_mandatory": true,
+      "source": {"attachment": "정비용 기자재 구매규격서.hwp", "page": 0, "quote": "OD445 x OD324 x L660mm"}
+    },
+    {
+      "item_no": "1",
+      "category": "FILTER_GRADE",
+      "title": "필터 등급",
+      "requirement_text": "EN779 기준 F9등급 (ASHRAE 52.2 기준 MERV 15 이상)",
+      "normalized_json": "{\"standard\": \"EN779\", \"class\": \"F9\", \"operator\": \">=\"}",
+      "is_mandatory": true,
+      "source": {"attachment": "정비용 기자재 구매규격서.hwp", "page": 0, "quote": "EN779 기준 F9등급"}
+    },
+    {
+      "item_no": "1",
+      "category": "PRESSURE_DROP",
+      "title": "초기 차압",
+      "requirement_text": "Initial Pr. Drop 0.71 inH2O 이하 @2770m3/h(1630CFM)",
+      "normalized_json": "{\"metric\": \"initial_dp\", \"operator\": \"<=\", \"value\": 0.71, \"raw\": \"0.71 inH2O\"}",
+      "is_mandatory": true,
+      "source": {"attachment": "정비용 기자재 구매규격서.hwp", "page": 0, "quote": "Initial Pr. Drop : 0.71 inH2O 이하"}
+    },
+    {
+      "item_no": "1",
+      "category": "EFFICIENCY",
+      "title": "0.4µm 평균 효율",
+      "requirement_text": "Average Efficiency of 0.4㎛ Particles 95.4% 이상",
+      "normalized_json": "{\"metric\": \"avg_eff_0_4um\", \"operator\": \">=\", \"value\": 95.4, \"unit\": \"%\", \"test_standard\": \"EN779\"}",
+      "is_mandatory": true,
+      "source": {"attachment": "정비용 기자재 구매규격서.hwp", "page": 0, "quote": "Average Efficiency of 0.4㎛ Particles : 95.4% 이상"}
+    },
+    {
+      "item_no": "",
+      "category": "TEST_STANDARD",
+      "title": "적용 시험규격 EN779",
+      "requirement_text": "EN779 : 2012",
+      "normalized_json": "{\"standard\": \"EN779\"}",
+      "is_mandatory": true,
+      "source": {"attachment": "정비용 기자재 구매규격서.hwp", "page": 0, "quote": "EN779 : 2012 / Filtration Standards(Europe)"}
+    },
+    {
+      "item_no": "",
+      "category": "TEST_STANDARD",
+      "title": "적용 시험규격 ASHRAE 52.2",
+      "requirement_text": "ASHRAE 52.2",
+      "normalized_json": "{\"standard\": \"ASHRAE52_2\"}",
+      "is_mandatory": true,
+      "source": {"attachment": "정비용 기자재 구매규격서.hwp", "page": 0, "quote": "ASHRAE 52.2"}
+    },
+    {
+      "item_no": "",
+      "category": "DELIVERY",
+      "title": "납품기한",
+      "requirement_text": "계약 후 150일 이내",
+      "normalized_json": "{\"days_after_contract\": 150, \"partial_allowed\": false}",
+      "is_mandatory": true,
+      "source": {"attachment": "20230342721-00_1679533861887_공고서_212360170.hwp", "page": 0, "quote": "납품기한: 계약 후 150일 이내"}
+    },
+    {
+      "item_no": "",
+      "category": "OTHER",
+      "title": "알 수 없는 카테고리",
+      "requirement_text": "기타 요구",
+      "normalized_json": "not json at all",
+      "is_mandatory": false,
+      "source": {"attachment": "없는 파일.hwp", "page": 0, "quote": ""}
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+<table>
+  <thead><tr><th style="width: 20mm">구분</th><th style="width: 42mm">요구사항</th><th style="width: 17mm">판정</th><th>근거 · 답변</th><th style="width: 36mm">근거 자료</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr class="{% if r.risk_level == 'HIGH' %}high{% endif %}">
+      <td>{{ r.category }}{% if r.item %}<div class="small">{{ r.item }}</div>{% endif %}</td>
+      <td>{{ r.title }}<div class="small">{{ r.requirement_text }}</div></td>
+      <td class="v v-{{ r.verdict }}">{{ r.verdict_label }}{% if r.risk_level == 'HIGH' %}<div class="high-risk">HIGH</div>{% endif %}{% if r.is_modified %}<div class="small">담당자 수정</div>{% endif %}</td>
+      <td>{{ r.rationale|linebreaksbr }}{% if r.auto_answer %}<div class="small">답변: {{ r.auto_answer }}</div>{% endif %}{% if r.action_items %}<div class="small">조치: {{ r.action_items|join:"; " }}</div>{% endif %}</td>
+      <td class="small">{% for e in r.evidences %}{{ e.label }}{% if e.page %} p.{{ e.page }}{% endif %}{% if e.quote %} “{{ e.quote|truncatechars:80 }}”{% endif %}<br>{% endfor %}</td>
+    </tr>
+  {% empty %}<tr><td colspan="5" class="muted">판정 결과가 없습니다.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>

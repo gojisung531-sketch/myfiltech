@@ -1,0 +1,30 @@
+# Core
+Django>=5.2,<5.3
+djangorestframework>=3.15
+djangorestframework-simplejwt>=5.3
+django-cors-headers>=4.4
+psycopg[binary]>=3.2
+cryptography>=43
+
+# Document parsing (specs/06)
+pdfplumber>=0.11
+python-docx>=1.1
+olefile>=0.47
+lxml>=5.0
+openpyxl>=3.1
+xlrd>=2.0
+charset-normalizer>=3.3
+
+# LLM providers (specs/07)
+anthropic>=1.0
+openai>=3.0
+google-genai>=2.0
+jinja2>=3.1
+jsonschema>=4.20
+
+# Dev / test
+pytest>=8
+pytest-django>=4.9
+factory_boy>=3.3
+ruff>=0.6
+weasyprint==70.0

@@ -1,0 +1,19 @@
+<table class="meta">
+  <tr><td>수신</td><td>{{ c.header.to }}</td></tr>
+  <tr><td>발신</td><td>{{ c.header.from }}</td></tr>
+  <tr><td>일자</td><td>{{ c.header.date }}</td></tr>
+  <tr><td>제목</td><td><strong>{{ c.header.subject }}</strong></td></tr>
+</table>
+<p>{{ c.intro|linebreaksbr }}</p>
+<ol class="questions">
+{% for q in c.questions %}
+  <li>
+    {% if q.reference %}<div class="small">관련: {{ q.reference }}</div>{% endif %}
+    <p><strong>질의</strong> {{ q.question|linebreaksbr }}</p>
+    {% if q.background %}<p class="muted">배경: {{ q.background|linebreaksbr }}</p>{% endif %}
+    {% if q.proposed_alternative %}<p>제안: {{ q.proposed_alternative|linebreaksbr }}</p>{% endif %}
+  </li>
+{% empty %}<li class="muted">질의 항목이 없습니다.</li>
+{% endfor %}
+</ol>
+<p>{{ c.closing|linebreaksbr }}</p>

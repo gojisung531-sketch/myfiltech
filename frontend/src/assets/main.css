@@ -1,0 +1,11 @@
+body {
+  font-family:
+    'Noto Sans KR',
+    'Malgun Gothic',
+    'Apple SD Gothic Neo',
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  background-color: #f8f9fa;
+}
