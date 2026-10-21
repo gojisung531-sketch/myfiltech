@@ -22,7 +22,7 @@ const steps = computed(() => {
   const extractDone = ['EXTRACTED', 'EVALUATING', 'EVALUATED'].includes(status)
   const extract =
     status === 'FAILED'
-      ? { state: 'warn', note: '추출 실패' }
+      ? { state: 'warn', note: '처리 실패 — 상세 오류 확인' }
       : status === 'EXTRACTING'
         ? { state: 'run', note: '진행 중' }
         : extractDone
@@ -30,11 +30,13 @@ const steps = computed(() => {
           : { state: 'wait', note: '미실행' }
 
   const analysis =
-    status === 'EVALUATING'
-      ? { state: 'run', note: '진행 중' }
-      : status === 'EVALUATED'
-        ? { state: 'done', note: '완료' }
-        : { state: 'wait', note: '미실행' }
+    status === 'FAILED'
+      ? { state: 'wait', note: '상태 확인 필요' }
+      : status === 'EVALUATING'
+        ? { state: 'run', note: '진행 중' }
+        : status === 'EVALUATED'
+          ? { state: 'done', note: '완료' }
+          : { state: 'wait', note: '미실행' }
 
   return [
     { label: '등록', state: 'done', note: '저장됨' },

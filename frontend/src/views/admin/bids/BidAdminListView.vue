@@ -2,9 +2,7 @@
 import { onMounted, reactive, ref, watch } from 'vue'
 
 import { deleteBid, listBids } from '@/api/bids'
-import { loadInitialData } from '@/api/documents'
 import EmptyState from '@/components/EmptyState.vue'
-import JobProgress from '@/components/JobProgress.vue'
 import BidDeleteModal from '@/views/admin/bids/BidDeleteModal.vue'
 import { useToastStore } from '@/stores/toast'
 import { errorMessage } from '@/utils/errors'
@@ -18,8 +16,6 @@ const count = ref(0)
 const page = ref(1)
 const loading = ref(false)
 const filters = reactive({ q: '', processing_status: '', outcome: '', ordering: 'created' })
-const jobs = ref([])
-const initialMode = ref('skip')
 const removing = ref(null)
 
 async function load() {
@@ -52,27 +48,6 @@ function goPage(delta) {
   load()
 }
 
-async function runInitialLoad() {
-  try {
-    const res = await loadInitialData(initialMode.value)
-    jobs.value.push({ id: res.job_id, label: 'initial-data 적재' })
-  } catch (err) {
-    toast.error(errorMessage(err))
-  }
-}
-
-function onJobDone(job) {
-  jobs.value = jobs.value.filter((j) => j.id !== job.id)
-  const s = job.result?.bids
-  if (job.status === 'SUCCEEDED' && s) {
-    toast.success(
-      `입찰 공고 적재 완료: 신규 ${s.created}, 건너뜀 ${s.skipped}, 추출 ${s.extracted}` +
-        (s.failed.length ? `, 실패 ${s.failed.length}` : ''),
-    )
-  }
-  load()
-}
-
 async function doDelete(bid) {
   try {
     await deleteBid(bid.id)
@@ -89,32 +64,9 @@ async function doDelete(bid) {
   <div>
     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
       <h1 class="h4 mb-0 me-auto">입찰 공고 관리</h1>
-      <select
-        v-model="initialMode"
-        class="form-select form-select-sm w-auto"
-        aria-label="적재 방식"
-      >
-        <option value="skip">이미 있는 공고 건너뛰기</option>
-        <option value="update">다시 추출·갱신</option>
-      </select>
-      <button class="btn btn-sm btn-outline-secondary" @click="runInitialLoad">
-        initial-data 적재
-      </button>
       <router-link to="/admin/bids/new" class="btn btn-sm btn-primary">
         <i class="bi bi-plus-lg me-1"></i>공고 등록
       </router-link>
-    </div>
-
-    <div v-if="jobs.length" class="card mb-3">
-      <div class="card-body">
-        <JobProgress
-          v-for="job in jobs"
-          :key="job.id"
-          :job-id="job.id"
-          :label="job.label"
-          @done="onJobDone"
-        />
-      </div>
     </div>
 
     <div class="row g-2 mb-3">
@@ -178,8 +130,12 @@ async function doDelete(bid) {
             <tr v-else-if="!bids.length">
               <td colspan="9">
                 <EmptyState
-                  message="등록된 입찰 공고가 없습니다. 공고를 등록하거나 initial-data를 적재하세요."
-                />
+                  message="등록된 입찰 공고가 없습니다. 공고 등록으로 공고 파일을 올려 주세요."
+                >
+                  <router-link to="/admin/bids/new" class="btn btn-sm btn-primary"
+                    >공고 등록</router-link
+                  >
+                </EmptyState>
               </td>
             </tr>
             <tr v-for="bid in bids" v-else :key="bid.id">

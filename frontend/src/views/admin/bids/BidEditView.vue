@@ -210,7 +210,7 @@ const fieldLabel = (key) => FIELDS.find((f) => f.key === key)?.label || key
         </div>
       </div>
       <div v-else-if="bid.processing_status === 'FAILED'" class="alert alert-danger small">
-        <strong>추출 실패:</strong> {{ bid.processing_error || '원인을 확인할 수 없습니다.' }}
+        <strong>처리 실패:</strong> {{ bid.processing_error || '원인을 확인할 수 없습니다.' }}
       </div>
       <div v-else-if="bid.processing_status === 'DRAFT'" class="alert alert-info small">
         등록과 문서 읽기까지만 끝난 상태입니다. 첨부의 읽기 상태를 확인한 뒤

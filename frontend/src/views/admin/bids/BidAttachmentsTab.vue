@@ -94,7 +94,7 @@ async function doDelete() {
   <div>
     <div class="card mb-3">
       <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
+        <table class="table table-sm align-middle mb-0 attach-table">
           <thead class="table-light">
             <tr>
               <th style="width: 4rem">순서</th>
@@ -229,3 +229,12 @@ async function doDelete() {
     />
   </div>
 </template>
+
+<style scoped>
+.attach-table {
+  min-width: 46rem;
+}
+.attach-table td:nth-child(2) {
+  min-width: 14rem;
+}
+</style>

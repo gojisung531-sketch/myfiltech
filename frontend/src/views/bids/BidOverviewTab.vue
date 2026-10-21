@@ -35,20 +35,39 @@ const toast = useToastStore()
 const items = ref([])
 const requirements = ref([])
 const loading = ref(true)
+const loadError = ref('')
 const groupBy = ref('category')
 const viewer = ref({ documentId: null, page: 0, quote: '' })
 
-onMounted(async () => {
+async function load() {
+  loading.value = true
+  loadError.value = ''
   try {
     ;[items.value, requirements.value] = await Promise.all([
       bidItems.list(props.bid.id),
       bidRequirements.list(props.bid.id),
     ])
   } catch (err) {
-    toast.error(errorMessage(err))
+    items.value = []
+    requirements.value = []
+    loadError.value = errorMessage(err, '요구사항을 불러오지 못했습니다.')
   } finally {
     loading.value = false
   }
+}
+onMounted(load)
+
+// 목록이 비어 있는 이유를 서버 상태로만 구분한다. '원문에 조건이 없다'고 단정하지 않는다.
+const notExtracted = computed(() =>
+  ['DRAFT', 'FAILED', 'EXTRACTING'].includes(props.bid.processing_status),
+)
+const emptyRequirementsMessage = computed(() => {
+  const status = props.bid.processing_status
+  if (status === 'EXTRACTING') return '요구조건 추출이 진행 중입니다.'
+  if (status === 'FAILED')
+    return '처리에 실패해 저장된 요구사항이 없을 수 있습니다. 상세 오류를 확인하세요.'
+  if (status === 'DRAFT') return '아직 요구조건 추출을 실행하지 않았습니다.'
+  return '저장된 요구사항이 없습니다. 추출 누락 가능성이 있으니 원문을 확인하세요.'
 })
 
 const attachmentDocs = computed(() =>
@@ -121,7 +140,7 @@ async function download(attachment) {
           <div class="card-header fw-semibold">공고 요약</div>
           <div class="card-body small">
             <p class="mb-3" style="white-space: pre-line">
-              {{ bid.summary || '요약이 없습니다.' }}
+              {{ bid.summary || '저장된 요약이 없습니다.' }}
             </p>
             <dl class="row mb-0">
               <template v-for="[label, value] in overview" :key="label">
@@ -142,7 +161,7 @@ async function download(attachment) {
               class="list-group-item d-flex align-items-center"
             >
               <i class="bi bi-file-earmark me-2"></i>
-              <span class="me-auto">
+              <span class="me-auto text-break">
                 {{ a.display_name }}
                 <span v-if="a.is_primary" class="badge bg-primary ms-1">공고문</span>
                 <span class="text-muted d-block"
@@ -173,29 +192,39 @@ async function download(attachment) {
     <div class="card mb-3">
       <div class="card-header fw-semibold">품목</div>
       <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0 small">
+        <table class="table table-sm align-middle mb-0 small item-table">
           <thead class="table-light">
             <tr>
               <th>품번</th>
               <th>품명</th>
               <th>규격</th>
               <th class="text-end">수량</th>
-              <th>매칭 제품 후보</th>
+              <th>제품 매칭 후보 (매칭 점수)</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!items.length && !loading">
-              <td colspan="5" class="text-muted text-center py-3">품목이 없습니다.</td>
+              <td colspan="5" class="text-muted text-center py-3">
+                {{
+                  loadError
+                    ? '품목을 불러오지 못했습니다.'
+                    : notExtracted
+                      ? '추출된 품목이 없습니다. (추출 미실행·진행 중·실패 상태)'
+                      : '저장된 품목이 없습니다. 원문 확인이 필요합니다.'
+                }}
+              </td>
             </tr>
             <tr v-for="item in items" :key="item.id">
               <td>{{ item.item_no || '-' }}</td>
-              <td>
+              <td class="text-break">
                 {{ item.name }}
                 <div class="text-muted">{{ item.filter_type_label }}</div>
               </td>
               <td>
                 {{ productDimension(item) }}
-                <div class="text-muted" style="white-space: pre-line">{{ item.spec_text }}</div>
+                <div class="text-muted text-break" style="white-space: pre-line">
+                  {{ item.spec_text }}
+                </div>
               </td>
               <td class="text-end text-nowrap">
                 {{ formatNumber(item.quantity) }} {{ item.unit }}
@@ -205,9 +234,9 @@ async function download(attachment) {
                   <span :class="{ 'fw-semibold': c.product === item.matched_product }">
                     {{ c.model_no }}
                   </span>
-                  <span class="text-muted">({{ Math.round(c.score * 100) }})</span>
+                  <span class="text-muted">(매칭 {{ Math.round(c.score * 100) }})</span>
                 </div>
-                <span v-if="!item.candidates.length" class="text-muted">-</span>
+                <span v-if="!item.candidates.length" class="text-muted">후보 없음</span>
               </td>
             </tr>
           </tbody>
@@ -221,14 +250,14 @@ async function download(attachment) {
         <div class="btn-group btn-group-sm" role="group" aria-label="그룹 기준">
           <button
             class="btn"
-            :class="groupBy === 'category' ? 'btn-secondary' : 'btn-outline-secondary'"
+            :class="groupBy === 'category' ? 'btn-primary' : 'btn-outline-secondary'"
             @click="groupBy = 'category'"
           >
             카테고리별
           </button>
           <button
             class="btn"
-            :class="groupBy === 'item' ? 'btn-secondary' : 'btn-outline-secondary'"
+            :class="groupBy === 'item' ? 'btn-primary' : 'btn-outline-secondary'"
             @click="groupBy = 'item'"
           >
             품목별
@@ -238,8 +267,25 @@ async function download(attachment) {
       <div v-if="loading" class="text-center py-4">
         <span class="spinner-border spinner-border-sm"></span>
       </div>
-      <EmptyState v-else-if="!requirements.length" message="추출된 요구사항이 없습니다." />
-      <table v-else class="table table-sm align-middle mb-0 small">
+      <div
+        v-else-if="loadError"
+        class="alert alert-danger d-flex align-items-center gap-2 m-3"
+        role="alert"
+      >
+        <i class="bi bi-exclamation-octagon"></i>
+        <span class="flex-grow-1">{{ loadError }}</span>
+        <button class="btn btn-sm btn-outline-secondary" @click="load">다시 시도</button>
+      </div>
+      <EmptyState
+        v-else-if="!requirements.length"
+        :icon="notExtracted ? 'bi-hourglass' : 'bi-question-circle'"
+        :message="emptyRequirementsMessage"
+      >
+        <p class="small mb-0">
+          비어 있다는 것은 공고에 조건이 없다는 뜻이 아닙니다. 첨부 원문으로 직접 확인하세요.
+        </p>
+      </EmptyState>
+      <table v-else class="table table-sm align-middle mb-0 small req-table">
         <tbody v-for="group in groups" :key="group.key">
           <tr class="table-light">
             <th colspan="3">
@@ -247,7 +293,7 @@ async function download(attachment) {
             </th>
           </tr>
           <tr v-if="!group.rows.length">
-            <td colspan="3" class="text-muted ps-4">공고에 명시된 요구사항 없음</td>
+            <td colspan="3" class="text-muted ps-4">등록·추출된 요구사항 없음 — 원문 확인 필요</td>
           </tr>
           <tr
             v-for="r in group.rows"
@@ -255,7 +301,7 @@ async function download(attachment) {
             :class="{ 'table-warning': r.normalized?.placeholder }"
           >
             <td class="ps-4" style="width: 55%">
-              <span class="fw-semibold">{{ r.title }}</span>
+              <span class="fw-semibold text-break">{{ r.title }}</span>
               <span v-if="r.is_mandatory" class="badge bg-danger ms-1">필수</span>
               <span v-if="groupBy === 'category' && r.item_label" class="text-muted ms-1"
                 >· {{ r.item_label }}</span
@@ -263,7 +309,7 @@ async function download(attachment) {
               <span v-if="groupBy === 'item'" class="text-muted ms-1"
                 >· {{ r.category_label }}</span
               >
-              <div class="text-muted">{{ r.requirement_text }}</div>
+              <div class="text-muted text-break">{{ r.requirement_text }}</div>
             </td>
             <td>
               <button
@@ -290,3 +336,12 @@ async function download(attachment) {
     />
   </div>
 </template>
+
+<style scoped>
+.item-table {
+  min-width: 40rem;
+}
+.req-table td:last-child {
+  word-break: break-all;
+}
+</style>

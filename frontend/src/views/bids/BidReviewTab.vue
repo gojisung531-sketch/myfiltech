@@ -22,7 +22,7 @@ onMounted(async () => {
     <div class="card-body">
       <h2 class="h6">검토 결과 확인</h2>
       <p class="small text-muted">
-        초안을 열어 수정·저장하고 PDF로 내려받으세요. 검토를 마쳤으면 확인 완료로 표시합니다
+        초안을 열어 수정·저장하고 PDF로 내려받으세요. 검토를 마쳤으면 검토 완료로 표시합니다
         (대시보드의 확인/미확인 건수에 반영).
       </p>
       <dl class="row small">
@@ -40,7 +40,7 @@ onMounted(async () => {
         <dt class="col-sm-3">확인 상태</dt>
         <dd class="col-sm-9">
           <template v-if="bid.review_status === 'REVIEWED'">
-            확인 완료 — {{ bid.reviewed_by_name }} ({{ formatDateTime(bid.reviewed_at) }})
+            검토 완료 — {{ bid.reviewed_by_name }} ({{ formatDateTime(bid.reviewed_at) }})
           </template>
           <template v-else>미확인</template>
         </dd>
@@ -81,7 +81,7 @@ onMounted(async () => {
         :disabled="reviewing"
         @click="emit('toggle')"
       >
-        {{ bid.review_status === 'REVIEWED' ? '확인 취소' : '확인 완료' }}
+        {{ bid.review_status === 'REVIEWED' ? '검토 표시 취소' : '검토 완료 표시' }}
       </button>
     </div>
   </div>
