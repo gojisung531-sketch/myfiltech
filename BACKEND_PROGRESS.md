@@ -1,4 +1,39 @@
-# 백엔드 인수인계 — Backend B2B
+# 백엔드 인수인계 — Backend B3A
+
+- 상태: **B3A 완료, 여기서 중단** (2026-10-22, Asia/Seoul). 관리자 전용 검토 대기 조회 API만 구현·검증. 제품 연결·정식 전환·검토 수정·판정·LLM 호출·프런트 수정 없음.
+- 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. B2B `6b73be5`의 깨끗한 작업본에서 시작. 완료 커밋은 이 기록을 포함한 `HEAD` — `feat(backend): add admin-only report register read APIs` (`git log -1 --oneline`).
+- 변경: `backend/apps/company/report_register_api.py`, `backend/apps/company/urls.py`, `backend/apps/company/tests/test_report_register_api.py`, `backend/docs/report-register-api.md`, 이 파일만. 모델·마이그레이션·기존 API 구현·파서·적재/매핑/평가 서비스·환경 설정 변경 없음.
+
+## 실제 경로와 UI 연결 계약
+
+- `GET /api/report-register-versions`, `GET /api/report-register-versions/{id}`: 파일 버전과 현재 DB 행 수, 상세의 시트별/검토상태별 집계. 저장 당시 metadata 집계와 구분하며 source_metadata/서버 경로/백업 위치를 응답하지 않음.
+- `GET /api/report-register-rows`, `GET /api/report-register-rows/{id}`: 출처·6개 실제 value 요약·관계형 review·경고 수/코드·시각. 전체 원본 payload는 상세에만 변형 없이 반환. 최상위 미확인 Boolean null과 payload.review의 false를 별개로 보존.
+- 기존 `IsAdminRole`, GET/HEAD/OPTIONS만 허용. 익명 401, 담당자 403, 관리자 쓰기 405. 기존 인증·LLM 게이트는 변경하지 않음.
+- 행 필터: file_version/sheet_name/review_status/ownership/test_target. q는 번호/모델/시료명/규격/기관의 `fields.*.value`만 부분 검색. 없는 키·null 안전, 셀/수식/경고/원문 전체 검색 없음. 잘못된 필터 400, 없는 상세/페이지 404, 빈 결과 200/count=0.
+- 기존 count/next/previous/results 페이지네이션, 기본 20·최대 200. 버전 id순, 행 file_version_id/sheet_name/row_number/id순. DB JSON 투영·count/limit/offset 사용, 전체 payload 목록 로딩·N+1·새 인덱스/캐시 없음.
+- 응답 필드/타입·합성 예시·빈값·오류·PDF와 관리대장 셀 출처의 차이는 **`backend/docs/report-register-api.md`** 참조. 다음 별도 범위는 관리자 검토 대기 화면을 이 네 경로에 연결하는 것. 화면 구현/연결은 아직 하지 않음. 다른 worktree/채팅 수정·메시지 없음.
+
+## 검사 결과와 실행 방법
+
+- 신규 API 테스트 **33개**, B1/B2A/B2B·단위·accounts 권한·기존 회사자료 API/초기 적재 차단 회귀 포함 **164 passed (4.51s)**. 별도 `test_filtech_b2a` PostgreSQL에서 최소 합성 자료로 실행 후 테스트 DB 제거. 실제 개발 DB에 테스트 입력/계정 생성·flush 없음. Python 외부 socket 시도 0회(로컬 PostgreSQL libpq 제외).
+- 익명/담당자/관리자 권한, 네 경로의 HEAD/OPTIONS·쓰기 거절, 집계·20/7 페이지·최대 크기·고정 순서, 중복 번호 유지, null/없는 모델, 실제 value만 검색, 필터/400/404, payload.review와 관계형 값의 분리 확인. 목록 SQL은 count+페이지 **2쿼리**, full payload 미선택. 조회 전후 대기/정식/판정 자료 불변과 기존 정식 API의 대기 자료 미노출 검증.
+- 명령은 기존 `.venv/b2a/run_tests.py`에 `apps/company/tests/test_report_register_api.py`, `test_report_staging_service.py`, `test_report_register_staging.py`, `test_report_preview.py`, `apps/core/tests/test_units.py`, `apps/accounts` 및 선택한 기존 회사자료/적재 차단 테스트를 전달. 전체 출력: `backend/.venv/b3a/tests.log`.
+- `check` 문제 0개, `makemigrations --check --dry-run` 변경 없음(기존 접속 차단 runner). 변경 Python 3개 ruff/format 및 `git diff --check` 통과. 기존 자료 누락 실패 8개·WeasyPrint DLL 문제는 해결/전체 테스트 통과로 처리하지 않음.
+
+## 서버 반영·실제 조회·자료 보존
+
+- 기존 --noreload 서버의 포트·실행 명령·부모 실행 파일·두 프로세스의 실제 작업 경로를 대조한 뒤 **현재 backend Django만 한 번 재시작**. 이전 시작 PID 13608/리스너 24964 → 현재 시작 **24552**/8000 리스너 **5048**. PostgreSQL **5332**(5432)는 그대로이며 UI/워커/다른 프로세스 종료·시작 없음.
+- 기동 명령: backend 작업 경로에서 `.venv/Scripts/python.exe manage.py runserver localhost:8000 --noreload`. 기존 .env·DB·인증 키·옵션 유지, `Start-Process -WindowStyle Hidden` 사용. 새 stdout/stderr: `backend/.venv/b3a/server.stdout.log`, `server.stderr.log`. 중복 서버 없음.
+- 실제 HTTP: 상태 200(llm_configured=false), 관리자 로그인/내 정보 200, 네 조회 경로 200. 버전 **id=1/151행**, **성능127·재질24**, PENDING151 확인. 첫/다음 각20행·페이지 재조회 일치/중복 없음, 상세 payload와 DB 원문 일치, 모델 없는 재질 상세 null·시트 필터24행, 잘못된 필터400·없는 상세404·빈 결과200 확인. 원문/번호 목록·토큰은 출력/커밋하지 않음.
+- 실제 담당자 계정은 없어 임의 생성하지 않음. 담당자 거절은 격리 테스트 검증 결과임. 새 경로 익명401도 실제 HTTP로 확인.
+- 조회 전후 public **39개 테이블**의 건수/전체 내용 해시를 대조. 정상 로그인으로 `accounts_user.last_login` 및 `token_blacklist_outstandingtoken`만 변화. 나머지 37개 테이블의 payload·검토 상태·updated_at 포함 내용 해시 동일. 버전1개/대기151행의 PENDING/UNKNOWN/UNKNOWN·미확인 플래그 null 유지.
+- 기존 Company1, Product/TestReport/Certificate/DeliveryRecord0, 공고1·첨부4·문서4·LLM 로그0 보존. 기존 공고 목록과 정식 자료 네 목록도 HTTP200 확인. 기존 media **4개 파일 해시 동일**. 자료 재적재·migration 적용·원본 엑셀 재파싱·Company.load/get_or_create·평가/LLM 실행 없음.
+- Git 제외 검증 자료: `backend/.venv/b3a/` 아래 테스트 로그, `before-http.json`/`after-http.json`(테이블 건수/해시만), `media-before.json`, `live-verification.json`, `restart.json`, 재기동 전후 작업 경로 확인 자료와 로컬 검증 도구. 기존 B2B 백업은 보존. 루트 공통 문서 동기화가 필요하면 후속 조정하며 이번 수정 범위 밖 파일은 손대지 않음.
+- 소유/여재·완제품 분류 확정, 검토 수정/이력, 제품 연결, 정식 전환, 원본 PDF 검증, LLM 및 다음 단계 자동 진행은 하지 않음. 다음 요청을 기다림.
+
+---
+
+# 이전 B2B 인수인계 (당시 관찰 기록)
 
 - 상태: **B2B 완료, 여기서 중단** (2026-10-22, Asia/Seoul). 개발 DB 백업·B2A migration 적용·실제 관리대장 한 버전의 검토 대기 적재/재실행 검증 완료. 제품 연결·정식 성적서 전환·판정·LLM·새 API·프런트 수정 없음.
 - 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. B2A `ba437ef` 이후 깨끗한 상태에서 시작. 완료 커밋은 이 기록을 포함한 `HEAD` — `feat(backend): stage report register rows with atomic idempotent import` (`git log -1 --oneline`).
