@@ -15,6 +15,7 @@ import BidAttachmentsTab from './BidAttachmentsTab.vue'
 import BidDeleteModal from './BidDeleteModal.vue'
 import BidFitCard from './BidFitCard.vue'
 import BidItemsTab from './BidItemsTab.vue'
+import BidProgressSteps from './BidProgressSteps.vue'
 import BidRequirementsTab from './BidRequirementsTab.vue'
 
 const TABS = [
@@ -180,7 +181,7 @@ const fieldLabel = (key) => FIELDS.find((f) => f.key === key)?.label || key
         <router-link to="/admin/bids" class="btn btn-sm btn-outline-secondary">
           <i class="bi bi-arrow-left"></i>
         </router-link>
-        <h1 class="h5 mb-0 me-auto">{{ bid.title }}</h1>
+        <h2 class="h5 mb-0 me-auto text-break">{{ bid.title }}</h2>
         <span :class="['badge', `bg-${PROCESSING_STATUS_VARIANT[bid.processing_status]}`]">{{
           bid.processing_status_label
         }}</span>
@@ -201,6 +202,8 @@ const fieldLabel = (key) => FIELDS.find((f) => f.key === key)?.label || key
         {{ bid.item_count }}개 · 요구사항 {{ bid.requirement_count }}건
       </p>
 
+      <BidProgressSteps :bid="bid" />
+
       <div v-if="jobId" class="card mb-3">
         <div class="card-body">
           <JobProgress :job-id="jobId" label="공고 추출" @done="onExtractDone" />
@@ -210,8 +213,9 @@ const fieldLabel = (key) => FIELDS.find((f) => f.key === key)?.label || key
         <strong>추출 실패:</strong> {{ bid.processing_error || '원인을 확인할 수 없습니다.' }}
       </div>
       <div v-else-if="bid.processing_status === 'DRAFT'" class="alert alert-info small">
-        첨부를 확인한 뒤 <strong>추출 실행</strong>을 누르면 LLM이 공고 메타데이터·품목·핵심
-        요구사항을 추출하고 적합도를 계산합니다.
+        등록과 문서 읽기까지만 끝난 상태입니다. 첨부의 읽기 상태를 확인한 뒤
+        <strong>추출 실행</strong>을 누르면 LLM이 공고 메타데이터·품목·핵심 요구사항을 추출하고
+        적합도를 계산합니다. 그 전에는 적합도·판정 결과가 없습니다.
       </div>
 
       <ul class="nav nav-tabs mb-3">
