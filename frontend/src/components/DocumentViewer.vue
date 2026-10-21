@@ -27,9 +27,18 @@ const pages = computed(() => content.value?.pages || [])
 const tables = computed(() => content.value?.tables || [])
 const hasText = computed(() => pages.value.some((p) => p && p.trim()))
 const isPdf = computed(() => props.document.file_format === 'PDF')
-// 저장된 위치에 해당하는 추출 텍스트 구획이 없는지. 없으면 이동했다고 표시하지 않는다.
-const outOfRange = computed(
-  () => props.initialPage > 0 && !!content.value && props.initialPage > pages.value.length,
+// 저장된 숫자 위치(p.N)를 추출 텍스트 구획으로 자동 이동하는 데 써도 되는 경우만 true.
+// API가 위치 종류(page/sheet/segment)나 원본 페이지↔구획 매핑을 주지 않으므로 비PDF에서는 쓰지 않는다.
+// PDF도 추출 구획 수가 원본 페이지 수와 일치하는 경우에만 쓴다(page_count 없음은 확인 불가로 본다).
+const canUsePosition = computed(
+  () =>
+    isPdf.value &&
+    props.document.page_count != null &&
+    props.document.page_count === pages.value.length,
+)
+const hasPosition = computed(() => props.initialPage > 0 && !!content.value)
+const positionUnmapped = computed(
+  () => hasPosition.value && (!canUsePosition.value || props.initialPage > pages.value.length),
 )
 const unitLabel = computed(() => (isPdf.value ? '페이지' : '텍스트 구획'))
 
@@ -39,8 +48,12 @@ function revokeFile() {
 }
 
 function applyInitialPage() {
+  // 자동 이동은 위치 매핑이 확인되는 경우만. 아니면 첫 구획에서 시작하고 사용자가 직접 넘긴다.
   const count = pages.value.length
-  page.value = props.initialPage > 0 && props.initialPage <= count ? props.initialPage - 1 : 0
+  page.value =
+    canUsePosition.value && props.initialPage > 0 && props.initialPage <= count
+      ? props.initialPage - 1
+      : 0
 }
 
 async function loadText() {
@@ -154,7 +167,7 @@ onBeforeUnmount(() => {
         <span v-if="document.has_file"> 원본 탭에서 파일을 직접 확인하세요.</span>
       </div>
       <div v-else-if="!document.has_file" class="alert alert-secondary py-2 small">
-        원본 파일이 없는 문서입니다(텍스트로 직접 입력된 자료).
+        연결된 원본 파일이 없습니다.
       </div>
 
       <template v-if="tab === 'text'">
@@ -164,10 +177,16 @@ onBeforeUnmount(() => {
           <button class="btn btn-sm btn-outline-secondary" @click="loadText">다시 시도</button>
         </div>
         <template v-else>
-          <div v-if="outOfRange" class="alert alert-warning py-2 small">
-            저장된 위치 p.{{ initialPage }}에 해당하는 추출 텍스트 구획이 없어 이동하지
-            못했습니다(현재 {{ pages.length }}개 {{ unitLabel }}). 추출 텍스트 안의 'PAGE n/N' 같은
-            표시나 원본에서 직접 찾아 확인하세요.
+          <div v-if="positionUnmapped" class="alert alert-warning py-2 small">
+            저장된 참조 위치 p.{{ initialPage }}로는 이동하지 않았습니다.
+            <template v-if="!isPdf">
+              이 문서 형식은 위치 종류(페이지·시트·텍스트 구획)와 원문 대응 정보가 없어 숫자만으로
+              추출 텍스트 구획을 정할 수 없습니다.
+            </template>
+            <template v-else>
+              추출 텍스트 구획이 원본 페이지와 일치하는지 확인되지 않거나 해당 구획이 없습니다.
+            </template>
+            위치 확인이 필요하니 원문에서 직접 찾아 확인하세요.
           </div>
           <div v-if="pages.length > 1" class="d-flex align-items-center gap-2 mb-2 small">
             <button class="btn btn-sm btn-outline-secondary" :disabled="page === 0" @click="page--">
@@ -182,7 +201,7 @@ onBeforeUnmount(() => {
               다음
             </button>
             <span
-              v-if="initialPage > 0 && !outOfRange && page === initialPage - 1"
+              v-if="canUsePosition && initialPage > 0 && page === initialPage - 1"
               class="badge bg-secondary"
               >저장된 참조 위치</span
             >
