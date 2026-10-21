@@ -1,9 +1,61 @@
-# 백엔드 인수인계
+# 백엔드 인수인계 — Backend B1
+
+- 상태: **B1 완료, 여기서 중단** (2026-10-21, Asia/Seoul). 읽기 전용 관리대장 미리보기만 구현. B2·DB 적재·제품 연결·판정·LLM 호출은 진행하지 않음.
+- 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. 시작 시 깨끗함. B0 `43a85d3`을 보존하고 환경 재설치·초기화 없이 진행.
+- 완료 커밋: 이 기록을 포함한 `HEAD` — `feat(backend): add read-only Filtech report register preview` (`git log -1 --oneline`으로 해시 확인).
+- 변경: `backend/apps/company/report_preview.py`, `backend/apps/company/management/{__init__.py,commands/__init__.py,commands/preview_filtech_reports.py}`, `backend/apps/company/tests/test_report_preview.py`, 이 파일. 프런트·루트 공통 문서·모델·마이그레이션·API 변경 없음.
+
+## B1 결과와 데이터 문제
+
+- 입력: `C:\Users\김가은\Desktop\2026-2학기\IT와비즈니스혁신\찐 프로젝트\기업제공 자료\필텍 시험성적서 관리대장.xlsx`. 원본 읽기만 수행.
+- 입력 SHA256 전후 동일: `0257bb970c4198796baae08fa6b2b6dc4bdc5750e530096e7d9a728443009afe`.
+- 성능: **127개 데이터 행**, 성적서번호 기재 셀 120개, `SHEET/Model` 기재 **40행**. 이전 조사 127/40과 일치. 선언 범위 `A1:BS1048576`, 실제 저장 셀 7,807개, 병합 32개. XML 스트리밍으로 저장된 셀만 처리하며 max_row만큼 펼치지 않음.
+- 재질: **24개 시료 행**, 번호 등 식별정보가 직접 기재된 행은 **23개**. `B23:E24` 영역의 열별 병합으로 24행이 23행의 번호·일자·기관을 공유함. 이전 23행 관찰과의 차이는 이 추가 시료 행이며, 임의 합치기/삭제 없이 두 행과 병합 기준 셀을 보존. 저장 셀 440개, 병합 4개. 모델 열 자체 없음.
+- 성능 누락: 모델 87행, 성적서번호/발행일/시험기관 각 7행, 시험규격 11행, 풍량 9행, 초기차압 13행. 효율 관련 수치가 없는 행 86개(등급 기록 여부와 별개). 빈값을 0으로 보정하지 않음.
+- 성적서번호 중복 **12그룹/33개 행**(성능 21행, 재질 12행; 시트 간 중복 그룹 0). 번호가 같아도 행을 모두 유지. 순번 `No.` 중복도 성능 3그룹/6행, 재질 1그룹/2행을 별도 보고. 병합 시료도 중복 관찰에 포함되며 오류로 단정하지 않음.
+- 풍량 단위 `ft3/m` 6개는 분모 의미를 추정하지 않고 변환 보류. 시험조건 포함 여재 차압 단위 22개도 조건을 지우거나 다른 시험값과 합치지 않음. 명확한 m³/h·Pa·mmAq 등만 기존 단위 유틸로 변환하고 적용식을 별도 저장.
+- 백분율 서식이 있는 수치 100셀은 원값·서식과 백분율 변환값을 분리. 0~1 숫자만 보고 백분율로 추정하지 않음. 수식 셀 87개(공유 수식 셀 49개 포함)는 캐시·수식 속성·공유 기준 셀 보존 및 미검증 경고. 실제 파일에 캐시 누락은 없으나 누락 경계 테스트 통과. 재계산 없음.
+- 기존 매핑 밖의 기재 셀은 성능 1개, 재질 4개를 원주소/원값과 함께 별도 보존. 임의 필드 의미를 부여하지 않음.
+- 각 기록: 파일 SHA256·시트·행 및 필드별 실제/요청 셀 주소·병합 범위·원값·XML 값·표시 형식·헤더/단위 근거 보존. 날짜는 원시 Excel 일련번호와 ISO 날짜를 분리. 소유/시험대상은 UNKNOWN, 제품 연결 미시도, 공인시험/공식인증은 null. **관리대장은 원본 성적서 PDF 검증 근거가 아님**.
+
+## 실행과 로컬 미리보기
+
+- 재사용 함수: `apps.company.report_preview.preview_filtech_reports(path)`; ORM·SDK·네트워크를 사용하지 않음. 현재 관찰한 성능/재질 헤더 배치만 지원, 주요 헤더가 달라지면 추측하지 않고 오류. 지원하지 않는 시트는 경고로 남김.
+- 기본 명령은 시트별 건수·누락·중복·경고 요약만 출력. `--output`을 지정해야 상세 JSON을 쓰며, 기존 출력과 원본은 덮어쓰지 않음. 상세 파일에는 기업 원문이 있으므로 Git 제외 위치만 사용.
+- 아래 명령은 작업폴더의 `backend`에서 실행. 이미 생성된 출력이므로 재실행 시 다른 Git 제외 JSON 경로를 지정하거나 `--output` 없이 요약만 확인.
+
+```powershell
+& .venv/Scripts/python.exe manage.py preview_filtech_reports 'C:\Users\김가은\Desktop\2026-2학기\IT와비즈니스혁신\찐 프로젝트\기업제공 자료\필텍 시험성적서 관리대장.xlsx' --output .venv/b1-preview/preview.json
+```
+
+- 상세: `backend/.venv/b1-preview/preview.json`; 요약: `summary.json`; 셀 대조: `cell-verification.json`; DB/네트워크 차단 검사: `guarded-command-verification.json`; 테스트: `tests.log` (모두 같은 b1-preview 폴더). `git check-ignore`로 상세 파일 제외 확인. 원본·JSON·비밀값·업로드 파일 커밋 없음.
+
+## B1 검증 및 현재 실행 상태
+
+- 별도 openpyxl 읽기 전용 리더로 성능 **7,677셀**, 재질 **400셀**의 값·서식 대조 완료. 대표 근거: 성능 `C4/B4/D4/I4/J8/AH4/AR4`, 모델 공란 `J4`, 백분율 `BB8`, mmAq 변환 `AR13`; 재질 `E3/C3/D3/H3`, 병합 시료 24행→23행 기준 셀. 원문 값 전체는 출력하지 않음.
+- 신규 경계 테스트 11개: 거짓 최대 행·스타일 전용 행 제외, 병합/중복 보존, 단위 불명/부호/문자/누락, 0·백분율 서식/이스케이프, 수식 캐시 누락·공유 수식, 1900/1904 날짜, 잘못된 헤더/ZIP/숫자, DB 차단·LLM 미호출·요약 출력·덮어쓰기 방지.
+- `pytest apps/company/tests/test_report_preview.py apps/core/tests/test_units.py apps/documents/tests/test_documents_api.py::test_load_initial_data_endpoint apps/documents/tests/test_documents_api.py::test_company_seed_command_is_blocked --tb=short` → **56 passed**. 기존 차단 정책 테스트는 격리된 pytest 테스트 DB만 사용.
+- `manage.py check` 문제 0개; 변경 Python 파일의 `ruff check`·`ruff format --check`, `git diff --check` 통과. 전체 pytest·브라우저/프런트 연동·PDF 생성은 실행하지 않음. B0 자료 누락 8개 실패와 WeasyPrint DLL 문제는 그대로 후속 과제로 보존.
+- 실제 입력 명령은 Django DB 연결과 socket 접속을 예외로 차단한 상태에서도 성공. **DB 연결 시도 0, 네트워크 접속 시도 0**. 해당 최종 실행 직전/직후 실제 DB **37개 테이블**의 건수·내용 해시 모두 동일. 회사/제품/성적서/인증/납품실적 및 LLM 호출 로그 0건 확인.
+- 단, B1 전체 작업 시간 동안에는 기존 서버에 다른 클라이언트의 로그인·공고 생성·첨부 POST/DELETE 요청이 관찰됨(로그 21:02~21:05). 전체 시간대 스냅샷에서 accounts_user, token_blacklist_outstandingtoken, bids_bidnotice, bids_bidattachment, documents_document가 달라졌으므로 **DB 전체가 B1 내내 불변이었다고 주장하지 않음**. 해당 기존/병행 데이터를 변경·삭제하지 않음. 비교 파일은 `db-before.json`, `db-after.json`에 건수/해시만 저장.
+- 기존 PostgreSQL PID **5332**(5432), Django 시작 PID **13608**/리스너 PID **24964**(8000) 유지. 서버 재시작·워커 실행 없음. 로그와 P: 매핑/재개 방법은 아래 B0 기록 참조. 현재 서버는 B0의 `--noreload` 프로세스이며 B1은 CLI 전용이라 재시작 불필요.
+
+## B2 설계 질문 — 사용자 지정 전 착수 금지
+
+1. `SHEET/Model` 40개 기재는 여재 모델인가 완제품 모델인가? 당사/비교 타사/용도/시험대상을 어떻게 확인하고 승인된 제품에 연결할 것인가?
+2. 성적서번호 중복과 하나의 성적서에 여러 시료 행을 어떻게 표현할 것인가? 기존 `TestReport.report_no(unique=True)`와 단일 product FK만으로는 출처/시료/조건별 다중 기록을 안전하게 표현하기 어려움.
+3. 시험규격에 ISO 29463 기재가 21행 있으나 기존 StandardFamily에는 없음. 규격 원문/버전과 규격군, 여재/완제품 시험조건·효율 지표를 어떻게 분리할 것인가?
+4. 기존 `is_official_certification=True` 기본값을 실제 자료 확인 전 어떻게 UNKNOWN 상태로 관리할 것인가? 공인시험·공식인증을 구별할 근거는 별도 확인 필요.
+5. 관리대장 버전 SHA/시트/셀과 원본 PDF 문서/페이지를 어떻게 함께 보존할 것인가? 번호/일자 누락과 `ft3/m`·조건부 단위·수식 캐시의 검토/승인 절차는 무엇인가?
+
+---
+
+# 이전 B0 인수인계 (당시 관찰 기록)
 
 - 상태: **Backend B0 완료, 여기서 중단** (2026-10-21, Asia/Seoul). 다음 단계 자동 진행 없음.
 - 작업폴더: `C:\Users\김가은\Documents\ChatGPT\it와비즈니스혁신\filtech-backend`
 - 브랜치: `feature/backend-foundation` 확인. 시작 시 작업 트리 깨끗함.
-- 완료 커밋: 이 기록을 포함한 `HEAD` — `chore(backend): verify B0 local PostgreSQL runtime and seed blocking`. 실제 해시는 `git log -1 --oneline`으로 확인.
+- 완료 커밋: `43a85d3` — `chore(backend): verify B0 local PostgreSQL runtime and seed blocking`.
 - 추적 변경: `backend/apps/documents/tests/test_documents_api.py`, `BACKEND_PROGRESS.md`만.
 - 프런트·API 계약·모델·분석 엔진·공통 설정 변경 없음. Phase 0 복사·초기화, 가상 회사자료 설치·적재, 원격 push·배포 없음.
 
