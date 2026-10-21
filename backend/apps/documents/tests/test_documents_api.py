@@ -1,11 +1,16 @@
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
+from django.core.management.base import CommandError
 
-from apps.company.models import Product
+from apps.company.models import Company, Product
 from apps.core.app_settings import set_setting
+from apps.core.models import Job
+from apps.documents.loader import COMPANY_SEED_BLOCKED_MESSAGE
 from apps.documents.models import Document, MetadataSchema
 
 pytestmark = pytest.mark.django_db
@@ -249,10 +254,38 @@ def test_schema_in_use_cannot_be_deleted(admin_client, inline_jobs):
     assert res.data["count"] == 1
 
 
-def test_load_initial_data_endpoint(admin_client, manager_client, inline_jobs):
+def test_load_initial_data_endpoint(admin_client, manager_client, inline_jobs, monkeypatch):
+    # Isolate the company policy from local historical bid files and LLM calls.
+    load_bids = Mock(return_value={"created": 0, "failed": []})
+    load_company = Mock(side_effect=AssertionError("Virtual company seed must not run"))
+    monkeypatch.setattr("apps.bids.loader.load_bids", load_bids)
+    monkeypatch.setattr("apps.documents.tasks.load_company", load_company)
     assert manager_client.post("/api/admin/load-initial-data").status_code == 403
+    assert not Job.objects.exists()
+    load_bids.assert_not_called()
     res = admin_client.post("/api/admin/load-initial-data", {"mode": "skip"}, format="json")
     assert res.status_code == 202
     assert res.data["job"]["status"] == "SUCCEEDED"
-    assert res.data["job"]["result"]["company"]["created"] == 19
-    assert Product.objects.count() == 6
+    assert res.data["job"]["result"]["company"] == {
+        "blocked": True,
+        "message": COMPANY_SEED_BLOCKED_MESSAGE,
+    }
+    load_company.assert_not_called()
+    load_bids.assert_called_once()
+    assert load_bids.call_args.kwargs["mode"] == "skip"
+    assert not Product.objects.exists()
+    assert not Company.objects.exists()
+    assert not Document.objects.exists()
+
+
+def test_company_seed_command_is_blocked(monkeypatch):
+    load_bids = Mock(side_effect=AssertionError("Company-only command must not load bids"))
+    monkeypatch.setattr(
+        "apps.documents.management.commands.load_initial_data.load_bids", load_bids
+    )
+    with pytest.raises(CommandError, match="개인 버전에서는 기존 가상 회사자료"):
+        call_command("load_initial_data", only="company", no_llm=True)
+    load_bids.assert_not_called()
+    assert not Product.objects.exists()
+    assert not Company.objects.exists()
+    assert not Document.objects.exists()
