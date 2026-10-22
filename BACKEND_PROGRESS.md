@@ -1,4 +1,39 @@
-# 백엔드 인수인계 — Backend B4A
+# 백엔드 인수인계 — Backend B4B
+
+- 상태: **B4B 완료, 여기서 중단** (2026-10-22, Asia/Seoul). 인증·시험규격·제출서류·난연의 미등록/미확인 처리와 합성 자동 검사만 보완. 실제 공고 판정·정답셋/정확도 검증·DB 적재/설정 변경·제품 연결·LLM 호출 없음.
+- 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. B4A `4399dd3` 이후 깨끗한 상태에서 시작. 완료 커밋은 이 기록을 포함한 `HEAD` — `fix(backend): distinguish missing evidence from confirmed shortfalls` (`git log -1 --oneline`).
+- 변경: `backend/apps/evaluation/rules.py`, `tests/{test_missing_evidence_rules.py,test_rules.py,test_qualification_rules.py}`(evaluation 아래), `backend/docs/{evaluation-rule-policy.md,company-data-revision-plan.md}`, 이 파일. 모델·마이그레이션·매핑·API/권한·프런트·루트 공통 문서·다른 worktree·원본 변경 없음.
+
+## 변경한 의미와 보존한 분기
+
+- 인증 종류가 미등록이면 회사 미보유/신규 취득을 단정하지 않고 **NEEDS_CONFIRMATION + 원본/내부 등록 확인**. SME null과 true+유효기간 미상도 확인 필요이며 필수 자료 HIGH 위험 유지. SME false·실제 인증 만료는 NEEDS_SUPPLEMENT, 알려진 유효 인증의 MET 유지.
+- 시험규격은 품목이 있으면 선택 제품의 성적서만 사용. 미매칭이면 확인 필요이며 회사 전체/타 제품 자료를 빌리지 않음. 회사 공통 요구는 회사 범위 조회 유지. 같은 family 미등록도 원본/등록 확인부터 안내하며 시험 의뢰를 확정하지 않음.
+- 발행일 미상은 연령 제한 유무와 무관하게 확인 필요. 알려진 모든 자료가 제한을 초과하면 보완 필요 유지. 날짜 미상 후보를 오래된 것으로 삭제하지 않음. 날짜/기관 조건을 통과하는 후보가 있으면 그 후보만 근거로 선택.
+- 명시 기관 정보의 빈값/미확인/지원하지 않는 조건과 명시적 비공인·미인정을 구분. KOLAS 요구에 일반 공인 표기만 있으면 미확인. 실제 기관 부정은 보완 필요 유지. 제한된 문자열 구분이며 기관의 인정서/시험 범위 전체 체계는 아님.
+- 제출 성적서/실적이 없으면 미보유를 단정하지 않음. 일부 후보가 있어도 품목·기간·원본·금액·시점 전체의 제출 적합성은 확인 필요로 남기고 후보 근거를 제공. 품목별 제출 후보도 선택 제품으로 제한. 인증서와 회사 작성 서류의 기존 충족 분기는 유지. 실적 수치 규칙 전체를 재작성하지 않음.
+- 난연 자료 미등록/제품 미매칭은 확인 필요와 원본 등록 확인. 공식 Listing 요구에 명시적 비공식 자료만 있는 보완 필요, 기존 공식/허용된 준용 시험의 충족 분기 유지. 모든 결과를 확인 필요로 바꾸지 않음.
+- RuleResult/API verdict 문자열·기존 권한·수동 수정/복원 계약 유지. 공식인증 Boolean 기본 true/준용 문구 추론, 인증 시작일/복수 기간/예외, 시험 판본·여재/완제품·고정 page=1 및 나머지 치수/등급/효율/차압/실적 규칙은 남은 범위. 이번에 업무 숫자·허용오차를 새로 하드코딩하거나 기존 값을 임의 변경하지 않음.
+
+## 자동 검사와 실행 환경
+
+- 신규 검사부터 작성: 수정 전 **29 failed / 16 passed**, 수정 후 최초 45 passed. 추가 경계(설정 연령 제한·다른 규격·폐지규격 날짜·제품별 실적 후보)를 포함한 **최종 신규 50 passed**. 합성 unsaved 객체를 사용하며 DB 접근 허용 표식 없음, Company.load/컨텍스트 DB 로드 금지, 설정은 명시적 테스트 대체. 기업 원문/가상 문서 fixture 사용 없음.
+- 관련 B3A/B2B/B2A/B1·단위·등급·accounts·설정·기존 회사자료 API/적재 차단 회귀 묶음 **230 passed (9.37s, 당시 신규45 포함)**. 이후 추가한 5경계를 포함해 신규50 재확인(0.21s). 중복 제외 검사 항목은 235개이며 전체 pytest 통과라는 뜻이 아님. 변경된 옛 fixture 기반 규칙 검사 두 파일의 기대 의미는 갱신했지만 해당 가상 문서 경로는 실행/복원하지 않음. 기존 원본 누락 실패 8개·WeasyPrint 문제 미해결, 일괄 skip/삭제 없음.
+- 시작 시 개발 **5432/8000 리스너 없음**, 개발 DB 읽기 전용 접속은 시간 초과. 기존 개발 DB/서버를 기동·재시작하지 않음. 별도 테스트는 기존 PostgreSQL 18.6 바이너리로 **`backend/.venv/b4b/pg-test` / 127.0.0.1:15432 / test_filtech_b4b**만 사용. 실제 .env는 바꾸지 않고 로컬 테스트 설정에서 endpoint를 고정·검사. pytest가 test_ DB를 제거한 뒤 잔존 테스트 DB 없음 확인, 임시 서버 PID13800만 경로/포트 확인 후 종료.
+- 외부 Python socket 접속 시도 0회(격리된 로컬 PostgreSQL libpq 제외). `check` 문제0, `makemigrations --check --dry-run` 변경 없음은 기존 dummy DB/접속 차단 runner로 검증. 변경 Python4개 ruff·format, `git diff --check` 통과.
+- 명령/로그: `backend/.venv/b4b/run_tests.py`로 신규 규칙/등급 및 B3A/B2/B1·accounts·core 설정·선택 회사 API/초기 적재 차단 테스트 실행. `tests-before.log`, `tests-after.log`, `regressions.log`, `tests-final-unit.log`, `check.log`, `migration-check.log`를 Git 제외 보관. 기존 개발 DB를 test DB로 재사용/flush하지 않았고 회사자료 fixture 19개를 복원·적재하지 않음.
+
+## 실제 자료·정책 차이와 다음 필수 작업
+
+- 기존 개발 DB가 꺼져 있어 행 건수/논리 내용 해시의 최신 SQL 대조와 현재 저장 AppSetting/활성 PromptTemplate 조회는 **미확인**. 이를 테스트 DB 결과로 대신하지 않음. 개발 pgdata **1,564개 파일**, media **4개**, .env, B4A 공고번호 불일치 기록의 SHA는 작업 전후 동일(`offline-preservation.json`). 기존 검토 대기/공고/첨부 대상에 쓰기·제품 연결·판정 저장·재분석을 하지 않음.
+- **새 규칙은 테스트/별도 프로세스에만 반영됨.** 기존 서버 반영/기동·재시작 없음, 기존 저장 판정은 갱신되지 않았고 최신 결과로 간주하면 안 됨. 테스트용 Q: 매핑은 Unicode 대상 경로 대조 후 해제 완료. 개발용 경로/.env는 유지.
+- `apps/core/defaults.py`와 `apps/llm/prompt_defaults.py`의 옛 판정 정의는 서로 같지만 증빙/시험규격 부족을 넓게 보완 필요로 설명하여 이번 개인 정의와 차이가 있음. 현재 저장값/프롬프트는 개발 DB 접속 불가로 확인하지 못함. 운영 seed/프롬프트/설정을 덮어쓰지 않음. 실제 LLM 검증 전 규칙·저장 판정 정의·활성 프롬프트를 개정/보존 절차와 함께 맞춰야 함.
+- `backend/docs/evaluation-rule-policy.md`: 변경 전후 분기, 실제 미달/정보 미상, 기존 정책값(설정과 고정값)·근거 미확인 범위, 남은 제약, 검사/서버 미반영 기록. 설정화와 업무적 타당성 검증을 구분함.
+- **다음 필수 단계 설계**는 `backend/docs/company-data-revision-plan.md`: 정식 자료 개정 식별자/분석 입력 스냅샷, 자료·코드/정책 변경 후 재분석 필요, 매칭/후보·적합도·판정·파생 초안의 재계산 범위, 수동 선택/판정/초안 보존·재확인, 검토 대기와 정식 반영 구분, GET/새로고침의 유료 분석 금지. 이번 모델/마이그레이션/API 구현은 하지 않음.
+- 공고 폴더/파일명 **20230342721**과 본문 **20230323830-00** 관계는 여전히 미확인. 번호·파일명·DB/첨부 조합을 수정하지 않음. B4A 최종 상세는 `.venv/b4a/review-v2/`이며 초기 초안과 구분. 별도 범위 지정 전 실제 공고 분석/정답셋·자료 적재·제품 연결·LLM·다음 개정 추적 구현을 자동 진행하지 않고 중단.
+
+---
+
+# 이전 B4A 인수인계 (당시 관찰 기록)
 
 - 상태: **B4A 완료, 여기서 중단** (2026-10-22, Asia/Seoul). 실제 과거 공고 한 건의 근거 대조·자료 공백·필텍/멘토 질문·판정 코드 점검 후보만 정리. 판정/정답셋/정확도 검증 완료가 아님.
 - 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. B3A `e8947be`의 깨끗한 작업본에서 시작. 완료 커밋은 이 기록을 포함한 `HEAD` — `docs(backend): review evidence and gaps for one real bid pilot` (`git log -1 --oneline`).

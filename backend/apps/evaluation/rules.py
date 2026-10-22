@@ -64,6 +64,13 @@ def evaluate_certification(requirement, ctx: EvaluationContext) -> RuleResult | 
             )
         if not company.is_sme:
             return RuleResult(NEEDS_SUPPLEMENT, "HIGH", "회사 정보상 중소기업이 아닙니다.")
+        if company.sme_cert_valid_until is None:
+            return RuleResult(
+                NEEDS_CONFIRMATION,
+                "HIGH" if mandatory else "MEDIUM",
+                "중소기업으로 등록되어 있으나 확인서 유효기간을 확인할 수 없습니다.",
+                action_items=["중소기업확인서 원본과 유효기간 확인·등록"],
+            )
         if company.sme_cert_valid_until and company.sme_cert_valid_until < ref:
             return RuleResult(
                 NEEDS_SUPPLEMENT,
@@ -104,10 +111,10 @@ def evaluate_certification(requirement, ctx: EvaluationContext) -> RuleResult | 
     certs = [c for c in ctx.certificates if c.cert_type == cert_type]
     if not certs:
         return RuleResult(
-            NEEDS_SUPPLEMENT,
+            NEEDS_CONFIRMATION,
             "HIGH" if mandatory else "MEDIUM",
-            f"요구 인증({cert_type})을 보유하고 있지 않습니다.",
-            action_items=[f"{cert_type} 인증 취득 또는 대체 서류 확인"],
+            f"등록된 인증 자료로 요구 인증({cert_type})을 확인할 수 없습니다.",
+            action_items=[f"내부 {cert_type} 인증서 원본과 등록 자료 확인"],
         )
     cert = max(certs, key=lambda c: c.valid_until or date.min)
     status = cert.status_on(ref, ctx.expiring_days)
@@ -937,16 +944,16 @@ def evaluate_fire_rating(requirement, ctx: EvaluationContext) -> RuleResult | No
         return None
     product = target_product(requirement, ctx)
     if product is None:
-        return None
+        return _unmatched_report_product(requirement)
     reports = [r for r in ctx.reports_for(product) if r.standard_family == "UL900"] if is_ul else []
     if not reports:
         return RuleResult(
-            NEEDS_SUPPLEMENT,
+            NEEDS_CONFIRMATION,
             "MEDIUM",
-            f"요구 난연 기준({'UL 900' if is_ul else '방염'}) 시험 자료가 없습니다."
+            f"등록된 자료로 요구 난연 기준({'UL 900' if is_ul else '방염'}) 시험을 확인할 수 없습니다."
             + (f" 사양서 기재: {product.fire_rating}." if product.fire_rating else ""),
             product.fire_rating,
-            action_items=["난연(방염) 시험 의뢰"],
+            action_items=["해당 제품의 난연(방염) 시험 원본과 등록 자료 확인"],
             evidences=[product_evidence(product)],
         )
     report = reports[0]
@@ -981,26 +988,62 @@ def evaluate_fire_rating(requirement, ctx: EvaluationContext) -> RuleResult | No
 _LAB_KEYWORDS = r"KOLAS|공인|accredit"
 
 
+def _unmatched_report_product(requirement) -> RuleResult:
+    return RuleResult(
+        NEEDS_CONFIRMATION,
+        "HIGH" if requirement.is_mandatory else "MEDIUM",
+        "품목의 제품이 매칭되지 않아 해당 제품의 시험·제출 자료를 확인할 수 없습니다.",
+        action_items=["품목의 제품 선택 및 해당 제품 원본 자료 확인"],
+    )
+
+
+def _requirement_reports(requirement, ctx):
+    """None means an unmatched item; only company-level requirements use the full pool."""
+    if requirement.item_id:
+        product = target_product(requirement, ctx)
+        return ctx.reports_for(product) if product is not None else None
+    return ctx.test_reports
+
+
+def _lab_requirement_status(accreditation: str, required: str) -> bool | None:
+    """Limited text evidence only; unknown is not a negative accreditation finding."""
+    if re.search(r"미확인|확인\s*필요|unknown|pending", accreditation, re.I):
+        return None
+    if re.search(
+        r"비공인|미공인|미인정|인정\s*(?:없음|취소)|not\s+accredited|non[-\s]*accredited|unaccredited",
+        accreditation,
+        re.I,
+    ):
+        return False
+    if not re.search(_LAB_KEYWORDS, required, re.I):
+        return None
+    if re.search("KOLAS", required, re.I) and not re.search("KOLAS", accreditation, re.I):
+        return None
+    return True if re.search(_LAB_KEYWORDS, accreditation, re.I) else None
+
+
 def evaluate_test_standard(requirement, ctx: EvaluationContext) -> RuleResult | None:
     norm = requirement.normalized or {}
     family = family_of(norm.get("standard") or "") or family_of(requirement.requirement_text)
     if family is None:
         return None
-    product = target_product(requirement, ctx) if requirement.item_id else None
-    pool = ctx.reports_for(product) if product else ctx.test_reports
+    pool = _requirement_reports(requirement, ctx)
+    if pool is None:
+        return _unmatched_report_product(requirement)
     reports = [r for r in pool if r.standard_family == family]
     label = FAMILY_LABELS.get(family, family)
     if not reports:
         return RuleResult(
-            NEEDS_SUPPLEMENT,
+            NEEDS_CONFIRMATION,
             "MEDIUM",
-            f"{label} 시험성적서를 보유하고 있지 않습니다.",
-            action_items=[f"{label} 공인기관 시험 의뢰 (일정·비용 반영)"],
+            f"등록된 자료로 {label} 시험성적서를 확인할 수 없습니다.",
+            action_items=[f"해당 범위의 {label} 성적서 원본과 내부 등록 자료 확인"],
         )
     max_age = norm.get("max_age_years") or get_setting("evaluation.test_report_max_age_years")
     if max_age:
         cutoff = date(ctx.reference_date.year - int(max_age), ctx.reference_date.month, 1)
-        fresh = [r for r in reports if r.issue_date and r.issue_date >= cutoff]
+        # An undated report might qualify; do not silently treat it as old.
+        fresh = [r for r in reports if r.issue_date is None or r.issue_date >= cutoff]
         if not fresh:
             return RuleResult(
                 NEEDS_SUPPLEMENT,
@@ -1011,29 +1054,56 @@ def evaluate_test_standard(requirement, ctx: EvaluationContext) -> RuleResult | 
                 evidences=[report_evidence(r) for r in reports],
             )
         reports = fresh
-    report = max(reports, key=lambda r: r.issue_date or date.min)
-    evidence = [report_evidence(r) for r in reports]
     lab_requirement = norm.get("lab_requirement") or ""
-    lab_note = ""
-    risk = "LOW"
-    if re.search(_LAB_KEYWORDS, lab_requirement, re.I) and not re.search(
-        _LAB_KEYWORDS, report.lab_accreditation or "", re.I
-    ):
-        lab_note = f" 시험기관 요건({lab_requirement}) 충족 여부 확인이 필요합니다."
-        risk = "MEDIUM"
+    statuses = [
+        (
+            r,
+            _lab_requirement_status(r.lab_accreditation or "", lab_requirement)
+            if lab_requirement
+            else True,
+        )
+        for r in reports
+    ]
+    ready = [r for r, status in statuses if status is True and r.issue_date is not None]
+    pending = [r for r, status in statuses if status is None or (status and r.issue_date is None)]
+    if not ready:
+        if pending:
+            actions = []
+            if any(r.issue_date is None for r in pending):
+                actions.append("등록된 시험성적서의 발행일·원본 확인")
+            if any(status is None for _, status in statuses):
+                actions.append(f"시험기관 요건({lab_requirement})과 원본 인정 내역 확인")
+            return RuleResult(
+                NEEDS_CONFIRMATION,
+                "MEDIUM",
+                f"등록된 {label} 성적서의 발행일 또는 명시된 시험기관 요건을 확인할 수 없습니다.",
+                ", ".join(r.report_no for r in pending),
+                action_items=actions,
+                evidences=[report_evidence(r) for r in pending],
+            )
+        return RuleResult(
+            NEEDS_SUPPLEMENT,
+            "MEDIUM",
+            f"등록된 {label} 성적서에 시험기관 요건({lab_requirement})의 명시적 불충족이 기록되어 있습니다.",
+            ", ".join(r.report_no for r in reports),
+            action_items=["요구 기관 요건을 만족하는 원본 자료 또는 보완 방안 확인"],
+            evidences=[report_evidence(r) for r in reports],
+        )
+    report = max(ready, key=lambda r: r.issue_date)
+    evidence = [report_evidence(report)]
     if report.is_obsolete_standard:
         return RuleResult(
             MET,
             "MEDIUM",
-            f"{report.report_no}({report.standard}) 성적서를 보유합니다. 단, 폐지 규격(EN 779:2012 → ISO 16890 대체)입니다.{lab_note}",
+            f"{report.report_no}({report.standard}) 성적서를 보유합니다. 단, 폐지 규격(EN 779:2012 → ISO 16890 대체)입니다.",
             f"{report.report_no} ({report.issue_date})",
             action_items=["폐지 규격 성적서 인정 여부 확인"],
             evidences=evidence,
         )
     return RuleResult(
         MET,
-        risk,
-        f"{label} 시험성적서 {report.report_no}({report.lab_name})를 보유합니다.{lab_note}",
+        "LOW",
+        f"{label} 시험성적서 {report.report_no}({report.lab_name})의 등록 발행일과 명시된 기관 요건을 확인했습니다.",
         f"{report.report_no} ({report.issue_date})",
         evidences=evidence,
     )
@@ -1107,33 +1177,49 @@ def evaluate_submission_doc(requirement, ctx: EvaluationContext) -> RuleResult |
 
     if re.search(r"성적서", text) and not re.search(r"치수|외관", text):
         family = family_of(text)
-        reports = [r for r in ctx.test_reports if not family or r.standard_family == family]
+        pool = _requirement_reports(requirement, ctx)
+        if pool is None:
+            return _unmatched_report_product(requirement)
+        reports = [r for r in pool if not family or r.standard_family == family]
         if reports:
             return RuleResult(
-                MET,
-                "LOW",
-                f"제출할 시험성적서({', '.join(r.report_no for r in reports[:3])})를 보유합니다.",
+                NEEDS_CONFIRMATION,
+                "MEDIUM",
+                f"등록된 시험성적서 후보({', '.join(r.report_no for r in reports[:3])})가 있으나 제출요건 전체의 확인이 필요합니다.",
                 ", ".join(r.report_no for r in reports[:3]),
-                action_items=[f"{timing or '제출 시점'}에 성적서 원본·사본 준비"],
+                action_items=[
+                    f"{timing or '제출 시점'}의 품목·기간·시험조건·원본 제출요건과 등록 후보 대조"
+                ],
                 evidences=[report_evidence(r) for r in reports[:3]],
             )
         return RuleResult(
-            NEEDS_SUPPLEMENT,
+            NEEDS_CONFIRMATION,
             "MEDIUM",
-            f"요구 시험성적서({FAMILY_LABELS.get(family, family) if family else doc})를 보유하고 있지 않습니다.",
-            action_items=["공인기관 시험 의뢰"],
+            f"등록된 자료로 제출할 시험성적서({FAMILY_LABELS.get(family, family) if family else doc})를 확인할 수 없습니다.",
+            action_items=["해당 제품/범위의 시험성적서 원본·등록 자료와 제출요건 확인"],
         )
     if re.search(r"실적", text):
-        if ctx.delivery_records:
+        records = ctx.delivery_records
+        if requirement.item_id:
+            product = target_product(requirement, ctx)
+            if product is None:
+                return _unmatched_report_product(requirement)
+            records = [r for r in records if any(p.pk == product.pk for p in r.products.all())]
+        if records:
             return RuleResult(
-                MET,
-                "LOW",
-                f"납품실적 {len(ctx.delivery_records)}건이 있어 실적증명서 발급을 요청할 수 있습니다.",
-                f"납품실적 {len(ctx.delivery_records)}건",
-                action_items=["발주처별 실적증명서 발급 요청"],
-                evidences=[record_evidence(r) for r in ctx.delivery_records[:3]],
+                NEEDS_CONFIRMATION,
+                "MEDIUM",
+                f"등록된 납품실적 후보 {len(records)}건의 제출 증빙과 조건 확인이 필요합니다.",
+                f"등록 납품실적 후보 {len(records)}건",
+                action_items=["실적증명 원본과 품목·기간·금액·제출시점 요건 확인"],
+                evidences=[record_evidence(r) for r in records[:3]],
             )
-        return RuleResult(NEEDS_SUPPLEMENT, "HIGH", "제출할 납품실적이 없습니다.")
+        return RuleResult(
+            NEEDS_CONFIRMATION,
+            "HIGH",
+            "등록된 자료로 제출할 납품실적 증빙을 확인할 수 없습니다.",
+            action_items=["내부 실적증명 원본과 등록 자료 확인"],
+        )
     if re.search(_COMPANY_ISSUED, text, re.I) or norm.get("issuer_type") in ("COMPANY", "SURETY"):
         issuer = (
             "보증보험사 발급"

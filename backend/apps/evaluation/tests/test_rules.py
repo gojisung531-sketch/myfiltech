@@ -346,7 +346,7 @@ def test_material(bid):
 def test_test_standard(bid):
     expect(run(bid, "TEST_STANDARD", {"standard": "ISO29461"}), "MET", "LOW")
     expect(run(bid, "TEST_STANDARD", {"standard": "EN779"}), "MET", "MEDIUM")
-    expect(run(bid, "TEST_STANDARD", {"standard": "ASHRAE52_2"}), "NEEDS_SUPPLEMENT", "MEDIUM")
+    expect(run(bid, "TEST_STANDARD", {"standard": "ASHRAE52_2"}), "NEEDS_CONFIRMATION", "MEDIUM")
     aged = run(bid, "TEST_STANDARD", {"standard": "EN779", "max_age_years": 3})
     expect(aged, "NEEDS_SUPPLEMENT", "MEDIUM")
 
@@ -363,13 +363,15 @@ def test_delivery_with_lead_time(bid):
 
 def test_submission_docs(bid):
     reports = run(bid, "SUBMISSION_DOC", {"doc": "EN 1822 시험성적서 원본", "timing": "납품 시"})
-    expect(reports, "MET", "LOW")
+    expect(reports, "NEEDS_CONFIRMATION", "MEDIUM")
     expect(
-        run(bid, "SUBMISSION_DOC", {"doc": "ASHRAE 52.2 공인 성적서"}), "NEEDS_SUPPLEMENT", "MEDIUM"
+        run(bid, "SUBMISSION_DOC", {"doc": "ASHRAE 52.2 공인 성적서"}),
+        "NEEDS_CONFIRMATION",
+        "MEDIUM",
     )
     expect(run(bid, "SUBMISSION_DOC", {"doc": "ISO 14001 인증서 사본"}), "NEEDS_SUPPLEMENT", "HIGH")
     expect(run(bid, "SUBMISSION_DOC", {"doc": "치수 및 외관검사 성적서"}), "MET", "LOW")
-    expect(run(bid, "SUBMISSION_DOC", {"doc": "실적증명서"}), "MET", "LOW")
+    expect(run(bid, "SUBMISSION_DOC", {"doc": "실적증명서"}), "NEEDS_CONFIRMATION", "MEDIUM")
     assert run(bid, "SUBMISSION_DOC", {"doc": "기타 서류", "issuer_type": "AUTHORITY"}) is None
 
 
