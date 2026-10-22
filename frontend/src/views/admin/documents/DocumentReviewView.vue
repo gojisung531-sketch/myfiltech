@@ -23,6 +23,15 @@ import { useToastStore } from '@/stores/toast'
 import { errorMessage } from '@/utils/errors'
 import { DOCUMENT_STATUS_VARIANT, displayValue } from '@/utils/format'
 
+// 반영 대상 자료 종류(서버가 주는 내부 모델 경로 → 업무 용어). 모르는 값은 그대로 보여 준다.
+const TARGET_LABELS = {
+  'company.Product': '제품',
+  'company.TestReport': '시험성적서',
+  'company.Certificate': '인증서',
+  'company.DeliveryRecord': '납품실적',
+  'company.Company': '회사 정보',
+}
+
 const ACTION_LABELS = {
   create: '신규 생성',
   update: '변경',
@@ -250,7 +259,8 @@ async function apply() {
               <template v-else-if="preview.changes">
                 <div v-for="change in preview.changes" :key="change.lookup" class="mb-2">
                   <div>
-                    <strong>{{ change.model }}</strong> · {{ change.lookup }} —
+                    <strong>{{ TARGET_LABELS[change.model] || change.model }}</strong> ·
+                    {{ change.lookup }} —
                     <span class="badge bg-light text-dark border">{{
                       ACTION_LABELS[change.action]
                     }}</span>
@@ -265,7 +275,7 @@ async function apply() {
                     </thead>
                     <tbody>
                       <tr v-for="(pair, field) in change.changes" :key="field">
-                        <td class="font-monospace">{{ field }}</td>
+                        <td>{{ field }}</td>
                         <td class="text-muted">{{ displayValue(pair[0]) }}</td>
                         <td>{{ displayValue(pair[1]) }}</td>
                       </tr>

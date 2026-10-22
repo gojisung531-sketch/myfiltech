@@ -73,7 +73,6 @@ const isMultiline = (value) => value !== null && typeof value === 'object'
           <tr v-for="row in rows" :key="row.id" :class="{ 'table-warning': isLow(row) }">
             <td class="text-nowrap">
               <div class="fw-semibold">{{ row.label || row.key }}</div>
-              <div class="text-muted font-monospace">{{ row.key }}</div>
             </td>
             <td class="w-50">
               <template v-if="editing.id === row.id">
