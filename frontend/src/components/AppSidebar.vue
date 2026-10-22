@@ -37,6 +37,7 @@ const MENU = [
       { to: '/admin/test-reports', label: '시험성적서', icon: 'bi-clipboard-data' },
       { to: '/admin/certificates', label: '인증서', icon: 'bi-patch-check' },
       { to: '/admin/delivery-records', label: '납품실적', icon: 'bi-truck' },
+      { to: '/admin/report-register', label: '관리대장 검토', icon: 'bi-journal-check' },
       { to: '/admin/documents', label: '문서', icon: 'bi-files' },
       { to: '/admin/metadata-schemas', label: '문서 분류', icon: 'bi-tags' },
     ],

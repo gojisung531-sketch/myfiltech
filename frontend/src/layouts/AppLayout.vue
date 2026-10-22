@@ -24,6 +24,7 @@ const TITLES = {
   'admin-test-reports': '필텍 자료 · 시험성적서',
   'admin-certificates': '필텍 자료 · 인증서',
   'admin-delivery-records': '필텍 자료 · 납품실적',
+  'admin-report-register': '필텍 자료 · 관리대장 검토',
   'admin-documents': '필텍 자료 · 문서',
   'admin-document': '필텍 자료 · 문서 검토',
   'admin-metadata-schemas': '필텍 자료 · 문서 분류',
