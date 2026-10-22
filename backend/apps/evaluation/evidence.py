@@ -33,9 +33,9 @@ def product_evidence(product) -> dict:
     return {
         "type": "product",
         "id": product.pk,
-        "label": f"{product.model_no} {product.name} 기술사양서",
-        "page": 1,
-        "quote": product.dimension_text,
+        "label": f"{product.model_no} {product.name} (등록 제품 요약)",
+        "page": 0,  # No original page/quote is stored on the structured record.
+        "quote": "",
     }
 
 
@@ -44,8 +44,8 @@ def report_evidence(report, quote: str = "") -> dict:
         "type": "test_report",
         "id": report.pk,
         "label": f"시험성적서 {report.report_no} ({report.standard})",
-        "page": 1,
-        "quote": quote or f"{report.result_class}",
+        "page": 0,
+        "quote": "",  # `quote` callers supply structured summaries, not source quotations.
     }
 
 
@@ -54,8 +54,8 @@ def record_evidence(record, quote: str = "") -> dict:
         "type": "delivery_record",
         "id": record.pk,
         "label": f"{record.delivered_ym} {record.client} {record.project_name}",
-        "page": 1,
-        "quote": quote or ", ".join(record.model_nos or []),
+        "page": 0,
+        "quote": "",
     }
 
 

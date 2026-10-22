@@ -34,8 +34,8 @@ def _cert_evidence(cert) -> dict:
         "type": "certificate",
         "id": cert.pk,
         "label": f"{cert.name or cert.cert_type} ({cert.cert_no})",
-        "page": 1,
-        "quote": f"유효 기간 {cert.valid_from} ~ {cert.valid_until}",
+        "page": 0,  # Structured validity fields do not establish an original page/quote.
+        "quote": "",
     }
 
 

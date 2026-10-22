@@ -197,5 +197,18 @@ def test_untouched_seed_prompts_are_refreshed_but_edited_ones_are_kept():
     assert seed_prompts() == 1
     classify = PromptTemplate.active("document.classify")
     assert classify.user_prompt_template != "old seed" and classify.notes == SEED_NOTE
+    assert classify.version == 2
+    assert (
+        PromptTemplate.objects.get(key="document.classify", version=1).user_prompt_template
+        == "old seed"
+    )
     assert PromptTemplate.active("bid.extract").user_prompt_template == "admin text"
     assert seed_prompts() == 0
+
+
+def test_seed_refresh_does_not_reactivate_disabled_prompt():
+    PromptTemplate.objects.filter(key="document.classify").update(
+        user_prompt_template="old seed", is_active=False
+    )
+    assert seed_prompts() == 0
+    assert PromptTemplate.active("document.classify") is None

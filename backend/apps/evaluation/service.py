@@ -104,6 +104,7 @@ def _requirement_payload(requirement, result, ctx) -> dict:
         "is_mandatory": requirement.is_mandatory,
         "item": str(requirement.item) if requirement.item_id else "",
         "source_quote": requirement.source_quote,
+        "source": bid_quote(requirement),
         "rule_result": _rule_payload(result),
         "company_evidence": company_evidence(requirement, ctx),
     }

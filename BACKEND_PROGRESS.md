@@ -1,4 +1,44 @@
-# 백엔드 인수인계 — Backend B4B
+# 백엔드 인수인계 — Backend B5A
+
+- 상태: **B5A 완료, 여기서 중단** (2026-10-22, Asia/Seoul). 저장 정책/활성 프롬프트 정합성 수정·검증과 시연 입력 준비 상태 확인까지. 실제 분석·추출·판정·초안·워커·제품 생성/연결·정식 전환·자료 적재·유료 LLM·연결 테스트 재실행 **0회**. 테스트의 합성 판정/가짜 응답은 실제 업무 분석과 구분한다.
+- 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. 깨끗한 `bfacaaf`에서 시작, B4B `5156670`과 서버 재개 이력 보존. 완료 커밋은 **이 기록을 포함한 HEAD** — `fix(backend): align stored evaluation policy and verify B5A readiness` (`git log -1 --oneline`). 변경은 backend/**와 이 파일뿐. 프런트·다른 worktree·팀 노션·기업 원본·루트 공통 문서 변경, push/초기화 없음.
+
+## 실제 적용 정책·활성 버전
+
+- 저장 `AppSetting:evaluation.verdict_definitions` **한 키만** 갱신. MET=비교 가능한 조건의 유효한 직접 근거, NEEDS_SUPPLEMENT=비교 가능한 실제 자료/명시적 사실로 확인된 미달·부족, NEEDS_CONFIRMATION=미등록/미매칭/원본·조건·기간 정보 부족. DB 부재를 회사 미보유로 단정하지 않고 실제 미달을 미상으로 일괄 낮추지도 않는다.
+- 새 기본 정책은 `apps/core/evaluation_policy.py` 한 곳에서 관리하고 기존 AppSetting/프롬프트 기본값이 공유. 시스템 프롬프트에 카탈로그·소개서·매칭 후보·PENDING 행의 직접 근거 격상 금지, 단위/표준·판본/시험조건·대상/기준일 비교, 인용·ID·페이지·시트·셀 생성 금지, 미확인 위치 처리, 초안의 저장/수동 판정 보존 원칙을 반영.
+- **실제 활성 9개 모두 v2**: `document.classify`, `document.extract_metadata`, `bid.extract`, `bid.fit_score`, `evaluation.judge`, `draft.compliance_matrix`, `draft.checklist`, `draft.technical_query`, `draft.report_summary`. 기존 v1 9개는 본문·작업 템플릿·스키마·메모·작성자·타임스탬프 그대로 보존하고 활성 플래그만 해제. 새 v2는 공통 시스템 정책과 새 버전 메모만 변경, 작업 텍스트/스키마/메타데이터는 복제 보존. 기존 판정·수동 작업·초안을 재계산하지 않음.
+- 적용 도구 `apps/llm/management/commands/align_evaluation_policy.py`: 기본은 읽기 전용 계획, `--apply --backup <새 .venv JSON>`일 때만 관련 행 잠금→배타적 백업 생성→트랜잭션 내 한 키 변경/새 버전 활성화. 알려진 옛 정책/공통 시스템만 자동 변경하며 수동 판정 정의·시스템/작업 텍스트·활성 누락은 검토 없이 덮어쓰지 않고 중단. 기존 백업 덮어쓰기 금지, 재실행은 변경 0건. 일반 seed도 v1 내용을 덮어쓰지 않고 새 버전 생성, 수동/비활성 프롬프트 보존으로 수정. 개발 DB에 seed/migrate를 실행하지 않음.
+- `evaluation/evidence.py`와 인증 근거의 **고정 page=1·요약값을 인용문처럼 만드는 처리 제거**. 구조화 자료의 원본 위치·인용은 page=0/quote=""(미확인)이며 제품 label도 등록 요약으로 표시. API 필드 형태는 유지. 요구사항의 실제 첨부/위치가 있으면 내부 요청 payload의 `source`로 전달한다. 기존 저장 근거는 소급 수정하지 않음.
+- 실제 저장 연결 상태: **ANTHROPIC / Claude Sonnet 5.5 (`claude-sonnet-5-5`)**, 키 존재·활성화·기존 연결 성공 기록 확인. 키 복호화/출력/재등록/검증 호출 없음. provider/model/파라미터 테이블 해시와 .env가 시작 시점과 동일. temperature0.2, 기본8192/timeout180/retries2 및 기존 작업별 override(판정/추출/초안32000 등), AUTO·use_llm=true·자동 추출후 판정=true·auto_apply_company=false·run_inline=false를 **변경하지 않음**.
+
+## 검증 결과와 보존 대조
+
+- **339 passed**: `apps/llm apps/core apps/accounts`, B4B missing_evidence/grades, B1 preview, B2 staging/service, B3A 조회 API, 초기 회사 적재 차단 2검사. 별도 `test_filtech_b2a`에서 `.venv/b2a/run_tests.py` 사용. 외부 Python socket 접속 시도 **0**, SDK/FakeProvider 대체. 신규 회귀는 삼분류 의미→저장 정책→실제 `_judge`/run_task 요청, 백업/원자적 롤백/멱등/수동 이력, 새 버전 번호, GET 무부작용, 최신 정식 입력 재조회/대기 제외, 합성 수동 판정 재실행 보존을 검사. 실제 공고 정확도·전체 pytest·브라우저 검증으로 표현하지 않음. 기존 company_data 원본 누락/WeasyPrint 문제는 복구·skip하지 않음.
+- Django check 문제0, makemigrations --check --dry-run 변경0(둘 다 DB/네트워크 차단); 변경 Python10개 ruff check/format 및 git diff --check 통과. 모델/마이그레이션 변경 없음.
+- **저장값 재조회와 실제 요청 구성 확인**: 정식 Company/Product/TestReport/Certificate/DeliveryRecord → `EvaluationContext.for_bid` → `_requirement_payload`/규칙 → `_judge`의 저장 AppSetting → `services.run_task`의 활성 PromptTemplate·task_config(override 포함) → LLMRequest 경로를 대조. 실제 개발 DB에서는 합성 빈 입력으로 9개 요청을 구성하고 전송 직전 가짜 provider에서 중단. READ ONLY 연결·SDK 생성/키 복호화/로그 쓰기 차단하에 v2 정책·Sonnet5.5·기존 파라미터를 확인. 실제 회사 판정 함수는 실행하지 않음. **개발 LLMCallLog 0→0, 실제 LLM/연결 테스트 0회**.
+- 개발 DB public **39개 테이블**의 건수/전체 내용 해시 대조. 자체 변경은 core_appsetting 한 키와 llm_prompttemplate 새9버전/구9활성 해제뿐. 다른 AppSetting은 이전 한 행을 SQL 읽기에서만 재구성한 전체 테이블 해시로 동일 확인; 구9버전은 필드별로 대조. 회사1, 정식 Product/TestReport/Certificate/DeliveryRecord0, 대기 version1/151행(PENDING·UNKNOWN/UNKNOWN·세 검증값 null), 공고1/첨부4/문서4, 판정/이력/초안0, Job·LLM 로그 보존. media4와 .env, 확인한 원본19개 SHA 동일.
+- 단, 작업 중 별도 웹앱 클라이언트의 **20:34:28 정상 로그인, 20:35:33 PATCH /api/metadata-schemas/1**가 기존 서버 로그에 관찰됨. accounts_user·token_blacklist_outstandingtoken·documents_metadataschema 해시도 달라졌으므로 정책 외 모든 DB가 작업 내내 불변이었다고 주장하지 않는다. 이 수동/인증 변경은 **그대로 보존**, 복구/초기화하지 않음. 그 외34테이블 동일. B5A 자체 HTTP 검사는 기존 관리자 읽기와 메모리 내 단기 access JWT를 사용해 로그인/refresh/token 행을 추가하지 않음(토큰 저장/출력 없음).
+
+## 서버 유지와 로컬 백업·복구
+
+- 소스 기본 정책/근거 처리 반영을 위해 소유 프로세스·실행 경로를 확인한 뒤 **Django만 한 차례** 교체. 기존 localhost:8000/--noreload/같은 venv·cwd·.env 유지. 현재 launcher **28904**, listener **11636**, PostgreSQL **21016/5432**와 P: 매핑 유지. DB 재시작·migrate·워커 없음. 실제 상태 API200(llm_configured=true), 설정 API의 저장값=소스 기본값·활성 v2, 관리자 버전/행 조회200·PENDING151, 공고 목록200/count1. 반복 GET도 수행 후 Job/LLM/업무 데이터 동일.
+- 로그/로컬 증거: `backend/.venv/b5a/`의 `regressions-verified.log`(339), `check.log`, `migration-check.log`, `runtime-request-verification.json`, `http-verification.json`, `db-before.json`, `db-after-final.json`, `preservation-verification-final.json`, `server-before.json`, `server-start.json`, `server.stdout.log`, `server.stderr.log`. 기존 runtime-resume 로그/DB 백업은 보존. 원문/백업/키/토큰은 Git에 포함하지 않음.
+- 변경 전 관련 설정/프롬프트 백업: **`.venv/b5a/policy-before-apply.json`**, SHA256 **c4b81b4b857f8c195c48a7daeed060356d7daad49684c25794a7e530e033850a**. 한 설정 원행, 기존 활성9개 원행, 변경 계획만 포함하며 API/복호화 키·provider·model 비밀 필드는 없음. 최초 읽기 백업 `policy-before.json`도 보존. 일반 DB 전체 복원은 필요하지 않음.
+- **복구가 필요할 때만** 백업 SHA와 대상 key/id를 먼저 확인하고 Django transaction.atomic에서 해당 AppSetting/프롬프트 행을 select_for_update로 잠근다. 현재 설정이 B5A 정책이고 각 활성 key가 백업 plan의 to(v2)이며 v2 내용이 B5A와 같은지 확인한다. 이후 `set_setting("evaluation.verdict_definitions", backup["setting"]["value"])` 및 백업 prompts 각 id의 `PromptTemplate.objects.get(pk=id).activate()`로 이전 버전을 재활성화한다. v1/v2 내용을 수정·삭제하지 않는다. 다른 수동 개정이 생겼으면 복구를 중단하고 개별 검토한다. 재조회/허용 범위 밖 해시 대조를 다시 수행한다. **B5A에서 복구를 실행한 것은 아님**. 코드도 예전 정책으로 맞춰야 한다면 별도 변경으로 검토하며 과거 커밋 reset/DB dump 복원은 하지 않는다.
+
+## 시연 후보·최소 자료·다음 시작점
+
+- 선정 후보 **20210829431-00 / [울산발전]GT #7,8 입구 공기필터(Pulse Filter)구매**. 공고 본문=폴더/파일명 번호, 구매결의번호=파일명, 사유서 건명과 규격서/품목명세서의 두 자재번호·형식·수량 대응 확인. HWP2/XLSX1 읽기 성공, 사유서 PDF1은 스캔으로 직접 판독만 완료하여 OCR/명시적 PDF 입력 필요. 원격 정정·첨부 완전성, HWP 물리 페이지, 단위 결손/순유효면적·고습 조건까지 검증 완료로 보고하지 않음. 새 공고 DB 등록/업무 추출 없음. 기존 공고1의 **20230342721 ↔ 20230323830-00 불일치는 미해결·보존**.
+- 준비 기록: `backend/docs/analysis-readiness-b5a.md`. 기업 원문/모델·성적서번호/수치·실제 인용과 좌표는 Git 제외 **`.venv/b5a/pilot-readiness-private.json`**. 카탈로그 p3왼쪽·소개서 p9의 페어 후보, 직접생산p2/중소기업p1 원본, 별도 공급/정비 자격 원본, 소개서p23 실적 주장, 관리대장 **성능10·55행만** 최소 대상으로 재사용. 원본 성적서 미발견은 미보유가 아님. 대기 행·카탈로그·소개서는 정식 직접 근거로 승격하지 않음. 전체151행 검토/분류/정식 전환·모델 유사성 연결 없음.
+- **사용자/기업 확인 최소 묶음:** 시연할 원통+원추 페어 확정 모델/도면과 시험 시료 대응, 해당 성적서 원본 위치(관리대장 성능10·55 중 관련 행), 순유효면적·고습 차압변동 근거, 단일 계약 실적증명 한 건. 2021 당시 재현이 목적이면 당시 자료가 별도 필요하며, 현재 설정 AUTO의 오늘 기준 재입찰 시뮬레이션과 구분한다. 사용자가 이미 연결한 키 재요청/151행 전수 분류 요구 없음.
+- **다음 바로 할 수 있는 일:** 위 최소 모델/원본 대응 확인 후 해당 공고와 필요한 원본만 사람 대조/OCR 준비. 후속 승인 범위에서 최소 정식 반영/공고 등록과 실제 분석을 따로 실행한다. 현재 자동 추출후 판정=true이므로 등록·추출 경로의 자동 연쇄를 먼저 확인하고 명시적 실행 범위를 정해야 하며, 이번 단계가 후속 유료 작업 승인을 뜻하지 않는다. GET/새로고침에 유료 실행을 추가하지 않음.
+- **최신 회사자료 경로:** `EvaluationContext.for_bid`는 매 실행 시 Company.load/활성 Product/정식 TestReport/Certificate/DeliveryRecord를 재조회하며 대기 행을 읽지 않는다. matching.match_items/update_fit도 새 컨텍스트/승인 입력으로 다시 확인해야 한다. 이전 ctx 재사용·새 사양 옆에 옛 판정/초안을 섞어 최신처럼 표시하면 안 된다. 실행 중 입력 변경을 막는 불변 스냅샷/전체 트랜잭션 보장은 아직 없음.
+- **기존 결과의 오래됨/수동 보존:** `backend/docs/company-data-revision-plan.md`의 자료 개정·입력 스냅샷·stale 표시·파생 결과 개정 일치는 **미구현**. 현재 UI/DB가 자동으로 최신/오래됨을 구분한다고 보고하지 않는다. 다음 실제 분석 전후에는 공고/첨부·정식 회사자료·제품 선택·기준일·규칙 소스 SHA·설정/활성 프롬프트 해시/버전과 실행시각을 비밀값 없는 로컬 실행 목록으로 고정·대조하고, 일치 여부 불명인 기존 결과는 재확인 필요로 취급한다. `evaluate_bid(keep_modified=True)`의 수동 행/이력 보존은 합성 재실행으로 확인했으며 다음 실제 단계에서는 수동 제품 선택·판정/답변/근거·초안의 ID/해시를 별도 저장해 전후 동일·자동 결과 분리·실패 시 기존 결과 보존을 검증한다. 전체 개정 시스템은 이번에 구현하지 않았다.
+
+---
+
+# 이전 B4B 인수인계 (당시 관찰 기록)
 
 - 상태: **B4B 완료, 추가 요청에 따라 기존 개발 DB/서버 재개 완료** (2026-10-22, Asia/Seoul). 새 기능 작업은 중단하고 서버는 유지. 실제 공고 판정·정답셋/정확도 검증·DB 적재/설정 변경·제품 연결·LLM 호출 없음.
 - 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. B4A `4399dd3` 이후 깨끗한 상태에서 시작. **B4B 완료 커밋 `5156670`** — `fix(backend): distinguish missing evidence from confirmed shortfalls` 보존. 재개 요청 시 미커밋 파일 없음. 아래 재개 기록은 이 인수인계 파일에만 추가하며 B4B 소스를 되돌리거나 변경하지 않음.
