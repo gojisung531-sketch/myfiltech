@@ -1,8 +1,19 @@
 # 백엔드 인수인계 — Backend B4B
 
-- 상태: **B4B 완료, 여기서 중단** (2026-10-22, Asia/Seoul). 인증·시험규격·제출서류·난연의 미등록/미확인 처리와 합성 자동 검사만 보완. 실제 공고 판정·정답셋/정확도 검증·DB 적재/설정 변경·제품 연결·LLM 호출 없음.
-- 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. B4A `4399dd3` 이후 깨끗한 상태에서 시작. 완료 커밋은 이 기록을 포함한 `HEAD` — `fix(backend): distinguish missing evidence from confirmed shortfalls` (`git log -1 --oneline`).
+- 상태: **B4B 완료, 추가 요청에 따라 기존 개발 DB/서버 재개 완료** (2026-10-22, Asia/Seoul). 새 기능 작업은 중단하고 서버는 유지. 실제 공고 판정·정답셋/정확도 검증·DB 적재/설정 변경·제품 연결·LLM 호출 없음.
+- 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. B4A `4399dd3` 이후 깨끗한 상태에서 시작. **B4B 완료 커밋 `5156670`** — `fix(backend): distinguish missing evidence from confirmed shortfalls` 보존. 재개 요청 시 미커밋 파일 없음. 아래 재개 기록은 이 인수인계 파일에만 추가하며 B4B 소스를 되돌리거나 변경하지 않음.
 - 변경: `backend/apps/evaluation/rules.py`, `tests/{test_missing_evidence_rules.py,test_rules.py,test_qualification_rules.py}`(evaluation 아래), `backend/docs/{evaluation-rule-policy.md,company-data-revision-plan.md}`, 이 파일. 모델·마이그레이션·매핑·API/권한·프런트·루트 공통 문서·다른 worktree·원본 변경 없음.
+
+## 추가 요청 — 기존 개발 실행 재개 (2026-10-22)
+
+- `backend-runtime-resume.md`에 따라 꺼져 있던 기존 실행 환경만 재개. 복구 직전 5432/8000 리스너와 PostgreSQL 프로세스가 없음을 재확인. **P:가 비어 있을 때만** Unicode 경로 대조 후 이 backend의 `.venv`로 매핑. 다른 매핑 덮어쓰기 없음. 기존 `.venv/pgdata`와 `.venv/postgresql-runtime/pgsql` 재사용, initdb·재설치·DB 생성/삭제/복원·flush·migrate·자료 적재 없음.
+- PostgreSQL은 기존 비정상 종료에 대한 자체 WAL 복구 후 정상 기동. 현재 **127.0.0.1:5432, PID21016**, 명령의 데이터 경로 **P:/pgdata** 확인. 실제 접속은 기존 **filtech DB/filtech 역할**, PostgreSQL18.6. 읽기 전용으로 확인한 적용 migration44개·미적용 계획0·이력 일관성 정상. 클러스터 초기화/수동 복구/권한 부여 없음.
+- Django는 이 backend 실제 작업 경로에서 기존 `.venv/Scripts/python.exe manage.py runserver localhost:8000 --noreload`로 **숨김 백그라운드** 기동. 시작 PID **16476**, 8000 리스너 **29588**, 두 프로세스의 실제 cwd·실행 파일/명령 확인. 기존 .env·키·관리자 계정 유지. **새 기동 프로세스에는 B4B `5156670` 코드가 반영됨**(소스 SHA 동일); 실제 판정 실행으로 동작을 재검증한 것은 아님. 기존 저장 결과는 재계산/갱신하지 않음.
+- 실제 HTTP: **GET /api/system/status 200**, llm_configured=false/active_provider=null. 기존 관리자 정상 로그인/내정보200, 익명 대기 API401, 인증된 버전 목록/상세·행 목록/상세200. 버전 **1개/id1**, **151행(성능127·재질24), PENDING151**, 기본 페이지20행. 한 행 상세 payload와 DB 저장 원문 일치, 관계형 원본 대조 null 유지. 원문·토큰·암호/키 출력 없음. 공고 목록200/count1.
+- 정상 로그인 전 public **39개 테이블의 건수·전체 내용 해시는 B4A 최종 대조와 모두 동일**. 조회/로그인 이후 변화는 `accounts_user.last_login`과 `token_blacklist_outstandingtoken` 인증 기록뿐. 회사/제품/정식 자료·대기 payload/검토 상태/updated_at·공고1·첨부4·문서4 보존. media4개·.env·B4B 소스 SHA 동일, LLM 로그0. 공고번호 불일치·첨부 조합 수정, 워커/판정/LLM/초안 실행 없음.
+- 현재 로그/검증 자료는 Git 제외 **`backend/.venv/runtime-resume-20261022/`**: `postgres.log`, `pg-start.stdout.log`, `pg-start.stderr.log`, `server.stdout.log`, `server.stderr.log`, `before-start.json`, `database-verification.json`, `db-before-http.json`, `db-after-http.json`, `http-verification.json`, `processes.json`, `django-working-directories.json` 및 로컬 읽기 전용 검증 도구. 기존 로그/백업 덮어쓰기 없음.
+- 재개 명령은 backend에서 P: 대상/포트/프로세스를 확인하고 꺼져 있을 때만 `P:/postgresql-runtime/pgsql/bin/pg_ctl.exe -D P:/pgdata -l P:/<새 Git 제외 로그> -w start`, `.venv/Scripts/python.exe manage.py runserver localhost:8000 --noreload`. 백그라운드는 `Start-Process -WindowStyle Hidden`, WorkingDirectory는 이 backend. **이미 정상 실행 중이면 재시작/중복 실행하지 않는다. P:와 현재 서버를 유지한다.**
+- B4B 검증 당시의 개발 DB/저장 설정 미조회 기록은 아래에 당시 사실로 보존. 이번 재개에서는 연결·migration 계획·상태/관리대장 조회만 확인했으며 저장 정책/활성 프롬프트의 정의 조정이나 실제 재분석으로 범위를 확대하지 않음.
 
 ## 변경한 의미와 보존한 분기
 
@@ -25,7 +36,7 @@
 ## 실제 자료·정책 차이와 다음 필수 작업
 
 - 기존 개발 DB가 꺼져 있어 행 건수/논리 내용 해시의 최신 SQL 대조와 현재 저장 AppSetting/활성 PromptTemplate 조회는 **미확인**. 이를 테스트 DB 결과로 대신하지 않음. 개발 pgdata **1,564개 파일**, media **4개**, .env, B4A 공고번호 불일치 기록의 SHA는 작업 전후 동일(`offline-preservation.json`). 기존 검토 대기/공고/첨부 대상에 쓰기·제품 연결·판정 저장·재분석을 하지 않음.
-- **새 규칙은 테스트/별도 프로세스에만 반영됨.** 기존 서버 반영/기동·재시작 없음, 기존 저장 판정은 갱신되지 않았고 최신 결과로 간주하면 안 됨. 테스트용 Q: 매핑은 Unicode 대상 경로 대조 후 해제 완료. 개발용 경로/.env는 유지.
+- **B4B 자동 검사 종료 당시에는 새 규칙이 테스트/별도 프로세스에만 반영된 상태였음.** 이후 위 추가 요청으로 기존 서버를 재개하여 B4B 소스가 반영됨. 기존 저장 판정은 여전히 갱신되지 않았고 최신 결과로 간주하면 안 됨. 테스트용 Q: 매핑은 Unicode 대상 경로 대조 후 해제 완료. 개발용 경로/.env는 유지.
 - `apps/core/defaults.py`와 `apps/llm/prompt_defaults.py`의 옛 판정 정의는 서로 같지만 증빙/시험규격 부족을 넓게 보완 필요로 설명하여 이번 개인 정의와 차이가 있음. 현재 저장값/프롬프트는 개발 DB 접속 불가로 확인하지 못함. 운영 seed/프롬프트/설정을 덮어쓰지 않음. 실제 LLM 검증 전 규칙·저장 판정 정의·활성 프롬프트를 개정/보존 절차와 함께 맞춰야 함.
 - `backend/docs/evaluation-rule-policy.md`: 변경 전후 분기, 실제 미달/정보 미상, 기존 정책값(설정과 고정값)·근거 미확인 범위, 남은 제약, 검사/서버 미반영 기록. 설정화와 업무적 타당성 검증을 구분함.
 - **다음 필수 단계 설계**는 `backend/docs/company-data-revision-plan.md`: 정식 자료 개정 식별자/분석 입력 스냅샷, 자료·코드/정책 변경 후 재분석 필요, 매칭/후보·적합도·판정·파생 초안의 재계산 범위, 수동 선택/판정/초안 보존·재확인, 검토 대기와 정식 반영 구분, GET/새로고침의 유료 분석 금지. 이번 모델/마이그레이션/API 구현은 하지 않음.
