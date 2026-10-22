@@ -10,7 +10,7 @@ import FitScoreBar from '@/components/FitScoreBar.vue'
 import JobProgress from '@/components/JobProgress.vue'
 import { useToastStore } from '@/stores/toast'
 import { errorMessage } from '@/utils/errors'
-import { saveResponse } from '@/utils/download'
+import { downloadFile, PDF_TYPES } from '@/utils/download'
 import { dDay, formatDateTime, formatKrw, PROCESSING_STATUS_VARIANT } from '@/utils/format'
 
 import BidComparisonTab from './BidComparisonTab.vue'
@@ -89,9 +89,13 @@ async function onJobDone(job) {
 async function downloadReport() {
   downloading.value = true
   try {
-    saveResponse(await downloadReportPdf(bidId.value), 'report.pdf')
+    await downloadFile(() => downloadReportPdf(bidId.value), {
+      types: PDF_TYPES,
+      fallbackName: 'report.pdf',
+      failMessage: '통합 보고서 PDF를 만들지 못했습니다.',
+    })
   } catch (err) {
-    toast.error(errorMessage(err, 'PDF를 만들지 못했습니다.'))
+    toast.error(err.message || 'PDF를 만들지 못했습니다.')
   } finally {
     downloading.value = false
   }

@@ -8,3 +8,17 @@ export function errorMessage(error, fallback = '요청을 처리하지 못했습
   }
   return data.detail || fallback
 }
+
+// Blob 응답(responseType: 'blob') 요청이 실패하면 오류 본문도 Blob이다. JSON이면 읽어서 메시지로 쓴다.
+export async function downloadErrorMessage(error, fallback) {
+  const data = error?.response?.data
+  if (typeof Blob !== 'undefined' && data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await data.text())
+      return errorMessage({ response: { data: parsed } }, fallback)
+    } catch {
+      return fallback
+    }
+  }
+  return errorMessage(error, fallback)
+}

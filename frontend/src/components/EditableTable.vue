@@ -15,7 +15,10 @@ function add(index) {
 
 <template>
   <div class="table-responsive">
-    <table class="table table-sm table-bordered align-top mb-1 small editable">
+    <table
+      class="table table-sm table-bordered align-top mb-1 small editable"
+      :style="{ minWidth: `${columns.length * 6.5}rem` }"
+    >
       <thead class="table-light">
         <tr>
           <th v-for="c in columns" :key="c.key" :style="c.width ? { width: c.width } : {}">
