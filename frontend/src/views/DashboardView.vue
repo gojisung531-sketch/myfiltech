@@ -99,9 +99,6 @@ const CARDS = [
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
       <div>
         <h2 class="h4 mb-0">입찰 공고 현황</h2>
-        <div class="small text-muted">
-          공고를 선택하면 요구사항 비교와 판정 근거를 확인할 수 있습니다.
-        </div>
       </div>
       <router-link v-if="auth.isAdmin" to="/admin/bids/new" class="btn btn-sm btn-primary">
         <i class="bi bi-plus-lg me-1"></i>공고 등록
@@ -328,7 +325,7 @@ const CARDS = [
   min-width: 56rem;
 }
 .bid-table thead th {
-  background-color: var(--ft-primary-soft);
+  background-color: var(--ft-bg);
   color: var(--ft-text);
   white-space: nowrap;
   font-size: 0.85rem;

@@ -178,15 +178,18 @@ onBeforeUnmount(() => {
         </div>
         <template v-else>
           <div v-if="positionUnmapped" class="alert alert-warning py-2 small">
-            저장된 참조 위치 p.{{ initialPage }}로는 이동하지 않았습니다.
-            <template v-if="!isPdf">
-              이 문서 형식은 위치 종류(페이지·시트·텍스트 구획)와 원문 대응 정보가 없어 숫자만으로
-              추출 텍스트 구획을 정할 수 없습니다.
-            </template>
-            <template v-else>
-              추출 텍스트 구획이 원본 페이지와 일치하는지 확인되지 않거나 해당 구획이 없습니다.
-            </template>
-            위치 확인이 필요하니 원문에서 직접 찾아 확인하세요.
+            저장된 참조 위치 p.{{ initialPage }} · 위치 확인 필요(이동하지 않음)
+            <details class="ft-help">
+              <summary>이유</summary>
+              <p v-if="!isPdf">
+                이 문서 형식은 위치 종류(페이지·시트·텍스트 구획)와 원문 대응 정보가 없어 숫자만으로
+                추출 텍스트 구획을 정할 수 없습니다. 원문에서 직접 찾아 확인하세요.
+              </p>
+              <p v-else>
+                추출 텍스트 구획이 원본 페이지와 일치하는지 확인되지 않거나 해당 구획이 없습니다.
+                원문에서 직접 찾아 확인하세요.
+              </p>
+            </details>
           </div>
           <div v-if="pages.length > 1" class="d-flex align-items-center gap-2 mb-2 small">
             <button class="btn btn-sm btn-outline-secondary" :disabled="page === 0" @click="page--">

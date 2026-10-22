@@ -146,10 +146,16 @@ onBeforeUnmount(() => {
             <span class="text-muted">저장된 참조 위치:</span> p.{{ page }}
           </div>
           <div v-if="positionNote" class="small text-muted mt-1">{{ positionNote }}</div>
-          <p class="small text-muted mt-3 mb-0">
-            문서를 열었다는 것은 근거가 정확하다는 검증 결과가 아닙니다. 인용문과 위치는 원문과 직접
-            대조하세요.
-          </p>
+          <div class="small mt-3">
+            <span class="badge bg-warning">원문 대조 필요</span>
+          </div>
+          <details class="ft-help mt-1">
+            <summary>이 표시의 뜻</summary>
+            <p>
+              문서를 열었다는 것은 근거가 정확하다는 검증 결과가 아닙니다. 저장된 인용문과 위치는
+              원문과 직접 대조하세요.
+            </p>
+          </details>
         </aside>
 
         <section class="doc-viewer">
@@ -185,7 +191,7 @@ onBeforeUnmount(() => {
   padding: 0.75rem 1rem;
   border: 1px solid var(--ft-border);
   border-radius: 0.4rem;
-  background: var(--ft-primary-soft);
+  background: var(--ft-bg);
 }
 .doc-quote {
   padding-left: 0.6rem;

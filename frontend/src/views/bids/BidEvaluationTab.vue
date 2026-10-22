@@ -368,9 +368,7 @@ function doReevaluate() {
 
       <div v-if="rows.length" class="card mb-3">
         <div class="card-body py-2">
-          <div class="small text-muted mb-1">
-            전체 요구사항 {{ rows.length }}건 기준 집계 (아래 필터와 무관)
-          </div>
+          <div class="small text-muted mb-1">전체 {{ rows.length }}건 기준 (필터와 무관)</div>
           <div class="d-flex flex-wrap align-items-center gap-2">
             <span class="badge bg-success fs-6 fw-normal">충족 {{ summary.MET }}</span>
             <span class="badge bg-warning fs-6 fw-normal"
@@ -486,8 +484,7 @@ function doReevaluate() {
                     {{ row.evaluation.company_value }}
                   </p>
                   <p v-else class="mb-0 text-muted">
-                    미제공 — 서버가 값을 기록하지 않았습니다. 자료 미등록·연결 없음일 수 있으며 회사
-                    미보유를 뜻하지 않습니다.
+                    미제공 (자료 미등록·연결 없음일 수 있음 — 미보유 아님)
                   </p>
                 </section>
                 <section class="mb-3">
@@ -499,16 +496,14 @@ function doReevaluate() {
                   >
                     {{ row.evaluation.rationale }}
                   </p>
-                  <p v-else class="mb-0 text-muted">
-                    미제공 — 서버가 판정 사유를 기록하지 않았습니다.
-                  </p>
+                  <p v-else class="mb-0 text-muted">미제공</p>
                   <div v-if="row.evaluation.rule_trace?.interpolation" class="text-muted mt-1">
                     계산: {{ row.evaluation.rule_trace.interpolation }}
                   </div>
                 </section>
                 <section class="mb-3">
                   <div class="detail-label">
-                    답변 초안 <span class="fw-normal text-muted">· 자동으로 제출되지 않습니다</span>
+                    답변 초안 <span class="fw-normal text-muted">· 자동 제출 안 됨</span>
                   </div>
                   <p v-if="row.evaluation.auto_answer" class="mb-0 text-break">
                     {{ row.evaluation.auto_answer }}
@@ -527,7 +522,7 @@ function doReevaluate() {
                 <section>
                   <div class="detail-label">
                     발주처 질의 초안
-                    <span class="fw-normal text-muted">· 자동으로 발송되지 않습니다</span>
+                    <span class="fw-normal text-muted">· 자동 발송 안 됨</span>
                   </div>
                   <p
                     v-if="row.evaluation.clarification_question"
@@ -563,8 +558,7 @@ function doReevaluate() {
                       </div>
                     </li>
                     <li v-if="!row.evaluation.evidences.length" class="text-muted">
-                      연결된 근거 자료 없음 (자료 미등록·연결 없음일 수 있으며 회사 미보유를 뜻하지
-                      않습니다)
+                      연결된 근거 없음 (자료 미등록·연결 없음일 수 있음 — 미보유 아님)
                     </li>
                   </ul>
                 </section>

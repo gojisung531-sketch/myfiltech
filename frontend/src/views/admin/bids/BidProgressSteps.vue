@@ -80,19 +80,28 @@ const ICONS = {
   background: var(--ft-surface);
   color: var(--ft-muted);
 }
+.steps li {
+  border-left-width: 3px;
+}
 .step-done {
-  color: var(--ft-ok-fg) !important;
-  background: var(--ft-ok-bg) !important;
-  border-color: var(--ft-ok-fg) !important;
+  color: var(--ft-text) !important;
+  border-left-color: var(--ft-ok-fg) !important;
+}
+.step-done i {
+  color: var(--ft-ok-fg);
 }
 .step-warn {
-  color: var(--ft-warn-fg) !important;
-  background: var(--ft-warn-bg) !important;
-  border-color: var(--ft-warn-fg) !important;
+  color: var(--ft-text) !important;
+  border-left-color: var(--ft-warn-fg) !important;
+}
+.step-warn i {
+  color: var(--ft-warn-fg);
 }
 .step-run {
-  color: var(--ft-check-fg) !important;
-  background: var(--ft-check-bg) !important;
-  border-color: var(--ft-check-fg) !important;
+  color: var(--ft-text) !important;
+  border-left-color: var(--ft-check-fg) !important;
+}
+.step-run i {
+  color: var(--ft-check-fg);
 }
 </style>

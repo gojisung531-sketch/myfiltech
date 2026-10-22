@@ -93,7 +93,7 @@ function open() {
 .dropzone:focus-visible,
 .dropzone.dragging {
   border-color: var(--ft-primary);
-  background: var(--ft-primary-soft);
+  background: var(--ft-hover-bg);
   outline: none;
 }
 .dropzone.disabled {

@@ -35,11 +35,13 @@ onMounted(load)
   <div class="card">
     <div class="card-body">
       <h2 class="h6">검토 결과 확인</h2>
-      <p class="small text-muted">
-        초안을 열어 수정·저장할 수 있습니다. ‘검토 완료 표시’는 담당자가 검토했다는 내부
-        표시이며(대시보드의 검토 건수에 반영), 원문 일치 검증·제출·법적 검토가 끝났다는 뜻이
-        아닙니다. 이 화면에서 외부로 발송·제출되는 것은 없습니다.
-      </p>
+      <details class="ft-help mb-3">
+        <summary>‘검토 완료 표시’의 뜻</summary>
+        <p>
+          담당자가 검토했다는 내부 표시이며(대시보드의 검토 건수에 반영), 원문 일치 검증·제출·법적
+          검토가 끝났다는 뜻이 아닙니다. 이 화면에서 외부로 발송·제출되는 것은 없습니다.
+        </p>
+      </details>
       <dl class="row small">
         <dt class="col-sm-3">판정 요약</dt>
         <dd class="col-sm-9">
@@ -95,12 +97,15 @@ onMounted(load)
         </li>
       </ul>
 
-      <div class="alert alert-secondary small">
-        <strong>통합 보고서 PDF</strong>는 저장된 초안이 있는 문서는 그 최신 버전 내용을, 저장된
-        초안이 없는 문서는 <em>저장하지 않은 규칙 기반 내용</em>을 즉석에서 만들어 함께 담습니다(LLM
-        호출 없음). 따라서 ‘저장된 초안 원본’을 내려받는 것과 같지 않습니다. 각 초안의 PDF·XLSX는 ④
-        초안 탭이나 편집 화면에서 받으세요.
-      </div>
+      <details class="ft-help mb-3">
+        <summary>통합 보고서 PDF에 담기는 내용</summary>
+        <p>
+          <strong>통합 보고서 PDF</strong>는 저장된 초안이 있는 문서는 그 최신 버전 내용을, 저장된
+          초안이 없는 문서는 <em>저장하지 않은 규칙 기반 내용</em>을 즉석에서 만들어 함께
+          담습니다(LLM 호출 없음). 따라서 ‘저장된 초안 원본’을 내려받는 것과 같지 않습니다. 각
+          초안의 PDF·XLSX는 ④ 초안 탭이나 편집 화면에서 받으세요.
+        </p>
+      </details>
       <button
         class="btn btn-outline-secondary me-2"
         :disabled="downloading"

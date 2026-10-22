@@ -113,20 +113,19 @@ watch(() => route.fullPath, closeIfNarrow)
         </div>
       </header>
 
-      <div
-        v-if="auth.isAdmin && system.loaded && !system.llmConfigured"
-        class="alert alert-danger rounded-0 mb-0 py-2 text-center"
-      >
-        <i class="bi bi-exclamation-octagon me-1"></i>LLM API Key 미설정 —
-        <router-link to="/admin/settings/llm" class="alert-link">설정하기</router-link>
-      </div>
-      <div
-        v-if="auth.user?.must_change_password"
-        class="alert alert-warning rounded-0 mb-0 py-2 text-center"
-      >
-        <i class="bi bi-shield-exclamation me-1"></i>초기 비밀번호를 사용 중입니다.
-        <router-link to="/account/password" class="alert-link">비밀번호 변경</router-link>을
-        권장합니다.
+      <div class="ft-notices">
+        <span
+          v-if="auth.isAdmin && system.loaded && !system.llmConfigured"
+          class="ft-notice"
+          title="AI(LLM) 키가 설정되지 않아 요구조건 추출·판정·초안 생성을 쓸 수 없습니다."
+        >
+          <i class="bi bi-plug"></i>AI 연결 필요
+          <router-link to="/admin/settings/llm">설정</router-link>
+        </span>
+        <span v-if="auth.user?.must_change_password" class="ft-notice">
+          <i class="bi bi-shield-exclamation"></i>초기 비밀번호 사용 중
+          <router-link to="/account/password">변경</router-link>
+        </span>
       </div>
       <main class="container-fluid py-4 flex-grow-1">
         <slot />
@@ -179,6 +178,30 @@ watch(() => route.fullPath, closeIfNarrow)
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+.ft-notices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 1.25rem 0;
+}
+.ft-notices:empty {
+  display: none;
+}
+.ft-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.85rem;
+  color: var(--ft-text);
+  background: var(--ft-surface);
+  border: 1px solid var(--ft-border);
+  border-left: 3px solid var(--ft-warn-fg);
+  border-radius: 0.3rem;
+}
+.ft-notice a {
+  font-weight: 600;
 }
 .ft-backdrop {
   position: fixed;

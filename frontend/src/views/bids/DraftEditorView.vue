@@ -403,20 +403,15 @@ const newQuestion = () => ({
     </div>
     <div v-else-if="!content" class="text-center py-5"><span class="spinner-border"></span></div>
     <template v-else>
-      <div class="alert alert-secondary small py-2">
-        <i class="bi bi-info-circle me-1"></i>자동 생성된 초안입니다. 제출 전 반드시
-        검토·수정하세요.
-        <span class="ms-1"
-          >저장·PDF·XLSX는 모두 지금 보는 <strong>v{{ draft?.version }}</strong
-          >의 저장된 내용에 적용됩니다.</span
+      <div class="small mb-3">
+        <span class="text-muted"
+          >v{{ draft?.version }}<template v-if="draft?.is_modified"> · 담당자 수정본</template> ·
+          저장·PDF·XLSX는 이 버전 기준 · 제출 전 검토 필요</span
         >
-        <span v-if="!isLatest" class="text-danger ms-1"
-          >이전 버전을 보고 있습니다 — 저장하면 이 버전을 덮어씁니다.</span
+        <span v-if="!isLatest" class="text-danger ms-2"
+          >이전 버전 — 저장하면 이 버전을 덮어씁니다</span
         >
-        <span v-if="draft?.is_modified" class="ms-1">(담당자 수정본)</span>
-        <span v-if="dirty" class="fw-semibold ms-1 dirty-note"
-          >저장하지 않은 변경 사항이 있습니다.</span
-        >
+        <span v-if="dirty" class="fw-semibold ms-2 dirty-note">저장하지 않은 변경 사항 있음</span>
       </div>
 
       <!-- Compliance Matrix -->

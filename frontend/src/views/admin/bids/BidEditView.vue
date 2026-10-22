@@ -212,10 +212,16 @@ const fieldLabel = (key) => FIELDS.find((f) => f.key === key)?.label || key
       <div v-else-if="bid.processing_status === 'FAILED'" class="alert alert-danger small">
         <strong>처리 실패:</strong> {{ bid.processing_error || '원인을 확인할 수 없습니다.' }}
       </div>
-      <div v-else-if="bid.processing_status === 'DRAFT'" class="alert alert-info small">
-        등록과 문서 읽기까지만 끝난 상태입니다. 첨부의 읽기 상태를 확인한 뒤
-        <strong>추출 실행</strong>을 누르면 LLM이 공고 메타데이터·품목·핵심 요구사항을 추출하고
-        적합도를 계산합니다. 그 전에는 적합도·판정 결과가 없습니다.
+      <div v-else-if="bid.processing_status === 'DRAFT'" class="small text-muted mb-3">
+        등록·문서 읽기까지 끝난 상태입니다. 첨부 상태를 확인한 뒤 <strong>추출 실행</strong>을
+        누르세요(적합도·판정은 그 뒤에 생성됩니다).
+        <details class="ft-help d-inline-block align-top">
+          <summary>자세히</summary>
+          <p>
+            추출 실행은 LLM으로 공고 메타데이터·품목·핵심 요구사항을 추출하고 적합도를 계산합니다.
+            그 전에는 적합도·판정 결과가 없습니다.
+          </p>
+        </details>
       </div>
 
       <ul class="nav nav-tabs mb-3">

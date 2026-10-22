@@ -111,14 +111,21 @@ const hasRefs = (row) =>
     </div>
     <div v-else-if="!data" class="text-center py-5"><span class="spinner-border"></span></div>
     <template v-else>
-      <div class="alert alert-secondary small py-2">
-        <i class="bi bi-info-circle me-1"></i>회사 값·제품 사양·참고 자료는 서로 다른 출처입니다.
-        참고 자료는 서버가 연결했거나 후보로 제시한 것으로, 목록에 있다고 해서 해당 요구조건의 충족
-        근거가 되는 것은 아닙니다. 판정은 서버가 계산한 값 그대로 표시합니다.
-        <span class="text-muted">
-          (판정 기준일 {{ data.reference_date
-          }}<template v-if="data.is_simulation"> · 과거 공고를 오늘 기준으로 판정</template>)
-        </span>
+      <div class="small mb-3">
+        <div class="text-muted">
+          판정 기준일 {{ data.reference_date
+          }}<template v-if="data.is_simulation"> · 과거 공고를 오늘 기준으로 판정</template> ·
+          연결·참고 자료는 충족 근거가 아닙니다 · 단위·시험표준·시험조건 미제공(원문 확인 필요)
+        </div>
+        <details class="ft-help mt-1">
+          <summary>이 화면 읽는 법</summary>
+          <p>
+            회사 값·제품 사양·참고 자료는 서로 다른 출처입니다. 참고 자료는 서버가 연결했거나 후보로
+            제시한 것이며, 목록에 있다고 해서 해당 요구조건의 충족 근거가 되는 것은 아닙니다. 판정은
+            서버가 계산한 값 그대로 표시하고, 비어 있는 칸은 자료 미등록·연결 없음일 수 있으며 필텍
+            미보유를 뜻하지 않습니다.
+          </p>
+        </details>
       </div>
 
       <div v-if="data.items.length" class="row g-3 mb-3">
@@ -147,7 +154,9 @@ const hasRefs = (row) =>
                   선택 사유:
                   {{ item.candidates.find((c) => c.product === item.matched_product).reason }}
                 </template>
-                <div>매칭 점수는 품목과 제품의 유사도이며 기술 적합도·낙찰 확률이 아닙니다.</div>
+                <div title="매칭 점수는 품목과 제품의 유사도이며 기술 적합도·낙찰 확률이 아닙니다.">
+                  매칭 점수 ≠ 기술 적합도
+                </div>
               </div>
               <div v-else class="text-muted mt-1">
                 매칭 후보가 없습니다. 등록된 제품 자료가 없거나 연결할 제품이 없는 상태입니다.
@@ -188,7 +197,6 @@ const hasRefs = (row) =>
                 </td>
                 <td class="text-break">
                   {{ row.requirement_value }}
-                  <div class="text-muted">단위·시험표준·시험조건은 원문에서 확인</div>
                 </td>
                 <td class="text-break">
                   <template v-if="row.product">

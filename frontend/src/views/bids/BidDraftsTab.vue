@@ -260,7 +260,8 @@ async function download(draft, format) {
       </div>
     </div>
 
-    <div class="small text-muted mt-3">
+    <details class="ft-help mt-3">
+      <summary>생성·재생성·다운로드 안내</summary>
       <p class="mb-1">
         <strong>생성 방식:</strong> 서버가 판정 결과로 내용을 규칙 기반으로 먼저 만들고, LLM이
         설정·사용 설정된 경우에만 문장을 보강합니다. 각 문서의 ‘규칙 기반/LLM 보강’은 서버에 저장된
@@ -276,7 +277,7 @@ async function download(draft, format) {
         버전은 편집 화면에서 버전을 선택해 받으세요. ‘확정’ 표시는 내부 검토 상태이며 제출·법적 검토
         완료를 뜻하지 않습니다. 모든 초안은 제출 전 담당자 검토가 필요합니다.
       </p>
-    </div>
+    </details>
   </div>
 </template>
 

@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps({ open: { type: Boolean, default: false } })
-defineEmits(['navigate'])
+const emit = defineEmits(['navigate'])
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -17,6 +17,7 @@ const MENU = [
     key: 'bids',
     label: '입찰 관리',
     icon: 'bi-file-earmark-text',
+    to: '/admin/bids', // 그룹 이름을 누르면 대표 페이지로 이동
     admin: true,
     match: ['/admin/bids', '/bids/'],
     children: [
@@ -28,6 +29,7 @@ const MENU = [
     key: 'company',
     label: '필텍 자료',
     icon: 'bi-building',
+    to: '/admin/company',
     admin: true,
     children: [
       { to: '/admin/company', label: '회사 정보', icon: 'bi-building' },
@@ -87,6 +89,10 @@ watch(
 function toggle(key) {
   expanded[key] = !expanded[key]
 }
+function onGroupLink(key) {
+  expanded[key] = true
+  emit('navigate')
+}
 </script>
 
 <template>
@@ -107,7 +113,29 @@ function toggle(key) {
             <i :class="['bi', item.icon]"></i><span>{{ item.label }}</span>
           </router-link>
           <template v-else>
+            <!-- 대표 페이지가 있는 그룹: 이름은 링크, 화살표는 별도 버튼(링크와 버튼을 중첩하지 않는다) -->
+            <div v-if="item.to" class="ft-grouprow">
+              <router-link
+                class="ft-link ft-grouplink"
+                :class="{ active: isGroupActive(item) }"
+                :to="item.to"
+                @click="onGroupLink(item.key)"
+              >
+                <i :class="['bi', item.icon]"></i><span>{{ item.label }}</span>
+              </router-link>
+              <button
+                type="button"
+                class="ft-caretbtn"
+                :aria-expanded="Boolean(expanded[item.key])"
+                :aria-controls="`ft-sub-${item.key}`"
+                :aria-label="`${item.label} 하위 메뉴 ${expanded[item.key] ? '접기' : '펼치기'}`"
+                @click="toggle(item.key)"
+              >
+                <i class="bi bi-chevron-down ft-caret" :class="{ flipped: expanded[item.key] }"></i>
+              </button>
+            </div>
             <button
+              v-else
               type="button"
               class="ft-link ft-group"
               :class="{ active: isGroupActive(item) }"
@@ -199,7 +227,34 @@ function toggle(key) {
 }
 .ft-link.active {
   color: #fff;
-  background: var(--ft-primary);
+  background: rgba(255, 255, 255, 0.14);
+}
+.ft-grouprow {
+  display: flex;
+  align-items: stretch;
+  gap: 0.15rem;
+  margin-bottom: 0.15rem;
+}
+.ft-grouplink {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.ft-caretbtn {
+  flex: 0 0 2.4rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.78);
+}
+.ft-caretbtn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+.ft-caretbtn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
 }
 .ft-group.active:not(:hover) {
   background: rgba(255, 255, 255, 0.1);

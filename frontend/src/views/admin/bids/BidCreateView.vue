@@ -147,10 +147,16 @@ async function submit() {
         </div>
 
         <p class="small text-muted mt-3 mb-0">
-          파일 또는 본문 중 하나는 필요합니다. 공고번호·공고명은 필수가 아닙니다. 등록하면 파일이
-          저장되고 문서 읽기가 시작되며, 읽기 결과는 첨부 목록의 상태로 확인합니다. 요구조건 추출과
-          적합도 분석은 등록 후 편집 화면의 <strong>추출 실행</strong>에서 별도로 진행합니다.
+          파일 또는 본문 중 하나가 필요합니다(공고명·번호는 선택).
         </p>
+        <details class="ft-help mt-1">
+          <summary>등록 후 처리</summary>
+          <p>
+            등록하면 파일이 저장되고 문서 읽기가 시작되며, 읽기 결과는 첨부 목록의 상태로
+            확인합니다. 요구조건 추출과 적합도 분석은 등록 후 편집 화면의
+            <strong>추출 실행</strong>에서 별도로 진행합니다.
+          </p>
+        </details>
         <div v-if="error" class="alert alert-danger small mt-3 mb-0" role="alert">
           <div>{{ error }}</div>
           <ul v-if="failedFiles.length" class="mb-0 mt-1">

@@ -239,9 +239,8 @@ async function onChanged() {
       >
         {{ bid.processing_error }}
       </div>
-      <div class="alert alert-secondary small py-2">
-        <i class="bi bi-info-circle me-1"></i>판정·답변·초안은 모두 자동 생성된
-        <strong>초안</strong>입니다. 최종 제출 전 담당자가 검토해야 합니다.
+      <div class="small text-muted mb-3">
+        <i class="bi bi-info-circle me-1"></i>자동 생성 초안 — 제출 전 담당자 검토 필요
       </div>
 
       <ul class="nav nav-tabs mb-3">

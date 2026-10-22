@@ -308,9 +308,10 @@ async function download(attachment) {
         :icon="notExtracted ? 'bi-hourglass' : 'bi-question-circle'"
         :message="emptyRequirementsMessage"
       >
-        <p class="small mb-0">
-          비어 있다는 것은 공고에 조건이 없다는 뜻이 아닙니다. 첨부 원문으로 직접 확인하세요.
-        </p>
+        <details class="ft-help d-inline-block text-start">
+          <summary>이 상태의 뜻</summary>
+          <p>비어 있다는 것은 공고에 조건이 없다는 뜻이 아닙니다. 첨부 원문으로 직접 확인하세요.</p>
+        </details>
       </EmptyState>
       <table v-else class="table table-sm align-middle mb-0 small req-table">
         <tbody v-for="group in groups" :key="group.key">
