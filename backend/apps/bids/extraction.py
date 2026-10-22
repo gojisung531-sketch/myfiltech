@@ -1,5 +1,6 @@
 """EXTRACT_BID: attachments → notice metadata, items and key requirements (specs/08 §2)."""
 
+import hashlib
 import json
 import logging
 import re
@@ -12,12 +13,15 @@ from apps.company.models import FilterType
 from apps.core.app_settings import get_setting
 from apps.core.units import parse_airflow, parse_dimension, parse_pressure
 from apps.documents.extractors.company import classify_filter_type
+from apps.documents.llm_steps import pdf_input
 from apps.documents.models import Document
 from apps.documents.pipeline import run_pipeline
 from apps.evaluation.context import EvaluationContext
 from apps.evaluation.matching import match_items, update_fit
+from apps.llm.models import PromptTemplate
 from apps.llm.prompt_defaults import REQUIREMENT_CATEGORIES
-from apps.llm.services import ensure_llm_configured, run_task
+from apps.llm.prompts import render
+from apps.llm.services import ensure_llm_configured, run_task, task_config
 
 from .models import BidAttachment, BidItem, BidNotice, BidRequirement, RequirementCategory
 from .services import ensure_primary
@@ -100,7 +104,7 @@ def excerpt(text: str, keywords: list[str]) -> str:
     return result[:EXCERPT_MAX_CHARS]
 
 
-def build_attachment_inputs(bid: BidNotice) -> list[dict]:
+def build_attachment_inputs(bid: BidNotice, *, require_all: bool = False) -> list[dict]:
     """Attachment texts in priority order within llm.max_input_chars (specs/07 §2)."""
     keywords = get_setting("extraction.excerpt_keywords")
     budget = max(10_000, get_setting("llm.max_input_chars") - PROMPT_OVERHEAD_CHARS)
@@ -113,12 +117,24 @@ def build_attachment_inputs(bid: BidNotice) -> list[dict]:
         document = attachment.document
         text = document.extracted_text or ""
         note = ""
+        if require_all and not text.strip():
+            if document.file_format == "PDF" and document.file:
+                text = "원본 PDF가 같은 파일명으로 직접 첨부되어 있습니다. PDF 내용을 읽으세요. 전사문은 없습니다."
+                note = " (원본 PDF 직접 입력)"
+            else:
+                raise BidExtractionError(f"읽을 수 없는 첨부가 있습니다: {document.display_name}")
+        if require_all and document.file_format != "PDF":
+            note += " (물리 페이지 미확인; source.page는 0)"
         if attachment.role in EXCERPT_ROLES and text:
             text = excerpt(text, keywords)
             note = " (핵심 조항 발췌)"
         if not text.strip():
             continue
         if len(text) > budget:
+            if require_all:
+                raise BidExtractionError(
+                    "입력 한도로 첨부 전체를 포함할 수 없습니다. 범위를 확인하세요."
+                )
             omitted = len(text) - budget
             text = text[:budget] + f"\n[입력 한도로 이 첨부의 뒷부분 {omitted:,}자를 생략했습니다.]"
         budget -= len(text)
@@ -129,9 +145,43 @@ def build_attachment_inputs(bid: BidNotice) -> list[dict]:
                 "text": text,
             }
         )
-        if budget <= 0:
+        if budget <= 0 and not require_all:
             break
     return inputs
+
+
+def extraction_files(bid: BidNotice, inputs: list[dict]) -> list:
+    """An unread PDF must reach bid.extract itself, even if no transcript was generated."""
+    names = {i["name"] for i in inputs}
+    files = []
+    for attachment in bid.attachments.select_related("document"):
+        document = attachment.document
+        if document.extracted_text.strip() or document.file_format != "PDF":
+            continue
+        if document.original_filename not in names:
+            raise BidExtractionError("스캔 PDF가 통합 추출 입력에서 누락되었습니다.")
+        model = task_config("bid.extract").model
+        if not model or not model.supports_pdf_input:
+            raise BidExtractionError("공고 추출 모델이 원본 PDF 입력을 지원하지 않습니다.")
+        original = pdf_input(document)
+        if not original:
+            raise BidExtractionError("스캔 PDF 원본 파일을 읽을 수 없습니다.")
+        files.extend(original)
+    return files
+
+
+def source_page(source: dict, attachment: BidAttachment | None) -> int | None:
+    """Only PDF page numbers have a known physical page mapping here."""
+    page = source.get("page")
+    if (
+        attachment is not None
+        and attachment.document.file_format == "PDF"
+        and isinstance(page, int)
+        and not isinstance(page, bool)
+        and 0 < page <= (attachment.document.page_count or 0)
+    ):
+        return page
+    return None
 
 
 # ---- post-processing ----------------------------------------------------------------
@@ -189,12 +239,11 @@ def normalize_requirement(category: str, text: str, normalized: dict) -> dict:
     elif category == "AIRFLOW":
         computed = parse_airflow(raw) or parse_airflow(text)
         value = normalized.get("value")
-        if computed is not None and (
-            not isinstance(value, (int, float)) or abs(value - computed) > computed * 0.01
-        ):
-            normalized["value"] = computed
+        if computed is not None:
+            if not isinstance(value, (int, float)) or abs(value - computed) > computed * 0.01:
+                normalized["value"] = computed
+                normalized["unit_corrected"] = value is not None
             normalized["unit"] = "m3/h"
-            normalized["unit_corrected"] = value is not None
     elif category == "DELIVERY":
         months = normalized.get("months_after_contract")
         if (
@@ -297,6 +346,7 @@ def replace_requirements(
         text = (data.get("requirement_text") or "").strip()
         normalized = normalize_requirement(category, text, _json(data.get("normalized_json")))
         source = data.get("source") or {}
+        attachment = attachments.get(source.get("attachment") or "")
         BidRequirement.objects.create(
             bid=bid,
             item=items.get((data.get("item_no") or "").strip()),
@@ -305,8 +355,8 @@ def replace_requirements(
             requirement_text=text,
             normalized=normalized,
             is_mandatory=bool(data.get("is_mandatory", True)),
-            source_attachment=attachments.get(source.get("attachment") or ""),
-            source_page=source.get("page") or None,
+            source_attachment=attachment,
+            source_page=source_page(source, attachment),
             source_quote=(source.get("quote") or "")[:2000],
             order=order + created,
             source=BidRequirement.Source.LLM,
@@ -327,7 +377,7 @@ def add_placeholders(bid: BidNotice) -> list[str]:
             bid=bid,
             category=group[0],
             title=f"{label} 요구사항 미확인",
-            requirement_text=f"공고에 {label} 요구사항이 명시되어 있지 않음 — 확인 필요",
+            requirement_text=f"추출 결과에서 {label} 요구조건을 확인하지 못함 — 원문 확인 필요",
             normalized={"placeholder": True},
             is_mandatory=False,
             order=order + len(added),
@@ -337,10 +387,55 @@ def add_placeholders(bid: BidNotice) -> list[str]:
     return added
 
 
+def review_sources(bid: BidNotice) -> dict:
+    """Check quote correspondence, not technical correctness or PDF visual content."""
+
+    def squash(value):
+        return re.sub(r"\s+", "", value)
+
+    def unquote(value):
+        return squash(value).translate(str.maketrans("", "", "\"'“”‘’"))
+
+    counts, rows = {}, []
+    for requirement in bid.requirements.select_related("source_attachment__document"):
+        attachment = requirement.source_attachment
+        quote = requirement.source_quote
+        if requirement.normalized.get("placeholder"):
+            state = "PLACEHOLDER"
+        elif attachment is None:
+            state = "MISSING_ATTACHMENT"
+        elif not quote.strip():
+            state = "MISSING_QUOTE"
+        else:
+            document = attachment.document
+            text = document.extracted_text
+            if quote in text:
+                state = "EXACT_TEXT"
+            elif squash(quote) in squash(text):
+                state = "WHITESPACE_MATCH"
+            elif unquote(quote) and unquote(quote) in unquote(text):
+                state = "QUOTATION_MARK_DIFFERENCE"
+            elif document.file_format == "PDF" and not text.strip():
+                state = "PDF_VISUAL_REVIEW_REQUIRED"
+            else:
+                state = "QUOTE_NOT_FOUND"
+        counts[state] = counts.get(state, 0) + 1
+        rows.append(
+            {
+                "requirement_id": requirement.pk,
+                "attachment_id": attachment.pk if attachment else None,
+                "quote_status": state,
+            }
+        )
+    return {"counts": counts, "requirements": rows, "technical_review_completed": False}
+
+
 # ---- job ---------------------------------------------------------------------------
 
 
-def process_attachments(bid: BidNotice, job=None, report=lambda p, m="": None) -> None:
+def process_attachments(
+    bid: BidNotice, job=None, report=lambda p, m="": None, *, parse_only: bool = False
+) -> None:
     attachments = list(bid.attachments.select_related("document"))
     for index, attachment in enumerate(attachments, start=1):
         document = attachment.document
@@ -348,13 +443,22 @@ def process_attachments(bid: BidNotice, job=None, report=lambda p, m="": None) -
             5 + int(35 * index / max(1, len(attachments))), f"첨부 처리 중: {document.display_name}"
         )
         if document.status not in (Document.Status.EXTRACTED, Document.Status.REVIEWED):
-            from_step = (
-                "classify"
-                if (document.extracted_text or document.status == Document.Status.NEEDS_OCR)
-                else "parse"
-            )
-            run_pipeline(document, from_step=from_step, apply=False, job=job)
-            document.refresh_from_db()
+            if parse_only:
+                # add_attachment already parses and rule-classifies without any paid calls.
+                from .services import _quick_process
+
+                _quick_process(document)
+                document.refresh_from_db()
+                if document.status == Document.Status.FAILED:
+                    raise BidExtractionError(f"첨부 읽기 실패: {document.display_name}")
+            else:
+                from_step = (
+                    "classify"
+                    if (document.extracted_text or document.status == Document.Status.NEEDS_OCR)
+                    else "parse"
+                )
+                run_pipeline(document, from_step=from_step, apply=False, job=job)
+                document.refresh_from_db()
         role = document.category.code if document.category else ""
         if attachment.role != role:
             attachment.role = role
@@ -362,26 +466,64 @@ def process_attachments(bid: BidNotice, job=None, report=lambda p, m="": None) -
     ensure_primary(bid)
 
 
-def extract_bid(bid: BidNotice, *, job=None, report=lambda p, m="": None) -> dict:
+def validate_extraction_only_target(bid: BidNotice) -> None:
+    if bid.processing_status not in (
+        BidNotice.ProcessingStatus.DRAFT,
+        BidNotice.ProcessingStatus.FAILED,
+    ):
+        raise BidExtractionError(
+            "등록/실패 상태의 공고만 실행합니다. 완료 결과를 반복 호출하지 않습니다."
+        )
+    if (
+        bid.fit_score is not None
+        or bid.items.filter(matched_product__isnull=False).exists()
+        or bid.requirements.filter(is_locked=True).exists()
+        or bid.requirements.filter(source=BidRequirement.Source.MANUAL).exists()
+        or bid.requirements.filter(evaluation__isnull=False).exists()
+        or bid.drafts.exists()
+    ):
+        raise BidExtractionError(
+            "기존 매칭·적합도·수동 요구조건·판정·초안이 있어 재추출하지 않습니다."
+        )
+
+
+def extract_bid(
+    bid: BidNotice, *, job=None, report=lambda p, m="": None, extraction_only: bool = False
+) -> dict:
+    if extraction_only:
+        validate_extraction_only_target(bid)
     ensure_llm_configured()
     bid.processing_status = BidNotice.ProcessingStatus.EXTRACTING
     bid.processing_error = ""
     bid.save(update_fields=["processing_status", "processing_error", "updated_at"])
     try:
-        process_attachments(bid, job=job, report=report)
-        inputs = build_attachment_inputs(bid)
+        process_attachments(bid, job=job, report=report, parse_only=extraction_only)
+        inputs = build_attachment_inputs(bid, require_all=extraction_only)
+        files = extraction_files(bid, inputs)
         if not inputs:
             raise BidExtractionError("텍스트를 추출한 첨부가 없습니다. 첨부 파일을 확인하세요.")
         report(45, "공고 통합 추출 중 (LLM)")
-        data = run_task(
+        template = PromptTemplate.active("bid.extract")
+        cfg = task_config("bid.extract")
+        variables = {
+            "attachments": inputs,
+            "today": timezone.localdate().isoformat(),
+            "requirement_categories": REQUIREMENT_CATEGORIES,
+        }
+        limit = get_setting("llm.max_input_chars")
+        if extraction_only and template and limit:
+            if len(render(template.user_prompt_template, variables)) > limit:
+                raise BidExtractionError(
+                    "통합 프롬프트가 입력 한도를 초과해 첨부가 잘릴 수 있습니다."
+                )
+        response = run_task(
             "bid.extract",
-            {
-                "attachments": inputs,
-                "today": timezone.localdate().isoformat(),
-                "requirement_categories": REQUIREMENT_CATEGORIES,
-            },
+            variables,
+            files=files,
+            template=template,
             job=job,
-        ).data
+        )
+        data = response.data
         report(80, "추출 결과 정리 중")
         primary = bid.attachments.filter(is_primary=True).select_related("document").first()
         with transaction.atomic():
@@ -392,12 +534,47 @@ def extract_bid(bid: BidNotice, *, job=None, report=lambda p, m="": None) -> dic
             items = upsert_items(bid, data.get("items") or [], attachments)
             created = replace_requirements(bid, data.get("requirements") or [], items, attachments)
             placeholders = add_placeholders(bid)
-            bid.extra = {**(bid.extra or {}), "placeholders": placeholders}
+            bid.extra = {
+                **(bid.extra or {}),
+                "placeholders": placeholders,
+                "extraction_run": {
+                    "scope": "REQUIREMENTS_ONLY" if extraction_only else "FULL",
+                    "completed_at": timezone.now().isoformat(),
+                    "llm_call_id": response.call_log.pk if response.call_log else None,
+                    "prompt_version": template.version if template else None,
+                    "system_sha256": hashlib.sha256(response.system.encode()).hexdigest(),
+                    "user_sha256": hashlib.sha256(response.user.encode()).hexdigest(),
+                    "provider": cfg.provider,
+                    "model": cfg.model_id,
+                    "temperature": cfg.temperature,
+                    "max_output_tokens": cfg.max_output_tokens,
+                    "timeout_sec": cfg.timeout_sec,
+                    "max_retries": cfg.max_retries,
+                    "effort": cfg.effort,
+                    "max_input_chars": get_setting("llm.max_input_chars"),
+                    "attachments": [
+                        {
+                            "id": a.pk,
+                            "document_id": a.document_id,
+                            "sha256": a.document.sha256,
+                            "text_sha256": hashlib.sha256(
+                                a.document.extracted_text.encode()
+                            ).hexdigest(),
+                            "input_mode": "ORIGINAL_PDF"
+                            if any(f.filename == a.document.original_filename for f in files)
+                            else "STORED_TEXT",
+                        }
+                        for a in bid.attachments.select_related("document")
+                    ],
+                },
+            }
+            bid.extra["extraction_source_review"] = review_sources(bid)
             bid.save()
-        report(90, "제품 매칭·적합도 계산 중")
-        ctx = EvaluationContext.for_bid(bid)
-        match_items(bid, ctx)
-        update_fit(bid, ctx, job=job)
+        if not extraction_only:
+            report(90, "제품 매칭·적합도 계산 중")
+            ctx = EvaluationContext.for_bid(bid)
+            match_items(bid, ctx)
+            update_fit(bid, ctx, job=job)
     except Exception as exc:
         bid.processing_status = BidNotice.ProcessingStatus.FAILED
         bid.processing_error = (
@@ -412,5 +589,5 @@ def extract_bid(bid: BidNotice, *, job=None, report=lambda p, m="": None) -> dic
         "items": len(items),
         "requirements": created,
         "placeholders": placeholders,
-        "fit_score": bid.fit_score,
+        "fit_score": None if extraction_only else bid.fit_score,
     }

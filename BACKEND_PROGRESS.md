@@ -1,4 +1,57 @@
-# 백엔드 인수인계 — Backend B5A
+# 백엔드 인수인계 — Backend B5B
+
+- 상태: **B5B 완료, 여기서 중단** (2026-10-22, Asia/Seoul). 실제 공고 한 건 등록·Claude 요구조건 추출·DB 저장/재조회 및 원문 대조까지. 제품 생성/연결·회사자료 적재/정식 전환·제품 매칭·적합도·요구조건 판정·초안·상시 워커는 **실행하지 않음**. 직원의 최종 입찰 결정을 확정하지 않음.
+- 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. 깨끗한 B5A `0071031`에서 이어감. 완료 커밋은 **이 기록을 포함한 HEAD** — `feat(backend): extract one real bid without downstream analysis` (`git log -1 --oneline`). 자기 변경은 backend/**와 이 파일뿐. 프런트/팀 노션/다른 worktree/기업 원본/루트 공통 문서 수정, 초기화/push 없음.
+
+## 실제 등록·호출·저장 결과
+
+- **공고 ID2**, `20210829431-00`, `[울산발전]GT #7,8 입구 공기필터(Pulse Filter)구매`. 공고번호/source_ref/공고문 파일명·본문을 교차 조회하여 기존 대상0건 확인 후 등록. 기존 공고 **ID1과 첨부4개는 그대로**. 현재 같은 대상1건이며 source_ref=`20210829431`; 낙찰 여부를 폴더명으로 확정하지 않고 기존 기본 outcome 유지.
+- 실제 첨부 **4개**: HWP 공고문·규격서, XLSX 품목명세서, 스캔 PDF 사유서. 새 attachment/document ID **6·7·8·9**, 원본=등록 SHA=업로드 사본 SHA 모두 일치. 새 미디어4개 추가, 기존4개는 바이트/경로 보존. Document는 **PARSED**이며 문서별 메타데이터 추출/OCR/전사 완료를 뜻하지 않음.
+- **실제 Claude Sonnet 5.5 정상 실행 1차례 성공**, `bid.extract`만 호출. 클라이언트 HTTP 요청 **1회(200)**, SDK 재시도 **0**, JSON 복구 **0**, 수동 복구 실행 **0**. 입력 **33,428 tokens**, 출력 **21,800 tokens**(SDK usage와 실제 LLMCallLog 대조). 선택/응답 모델 모두 `claude-sonnet-5-5`, 프롬프트 **v2**. 실제 금액은 응답에서 확인되지 않아 추정 비용을 제시하지 않음. 연결 테스트를 다시 호출하지 않음.
+- LLMCallLog 새 **1행/id1**, task=`bid.extract`, status=OK. **품목2개, 요구조건37개, placeholder0개** 실제 저장·재조회. `processing_status=EXTRACTED`, `review_status=UNREVIEWED`, `fit_score=null`, fit_reason 비어 있음, rule_fit_score/fit_breakdown/verdict_counts 없음. 두 품목 matched_product=null, BidProductMatch/RequirementEvaluation/EvaluationHistory/DraftDocument/Job 추가0.
+- 기존 Claude 키·Sonnet 선택·온도/토큰/timeout/SDK재시도·task override·활성 v2 9개·전역 자동판정 설정을 **변경하지 않음**. 키는 기존 SDK 요청 경로에서만 복호화해 사용하며 키/토큰/기업 원문을 출력·Git 저장하지 않음.
+
+## 분리한 실행 경로·스캔 입력
+
+- 기존 일반 `process_attachments → run_pipeline`에는 문서 분류/메타데이터 LLM이 있고, `extract_bid` 뒤 match_items/update_fit, `extract_bid_job` 뒤 auto_evaluate enqueue가 있음을 확인. **일반 API 기본 동작/응답·전역 설정은 유지**하고 `extract_bid(..., extraction_only=True)` / `manage.py extract_bid_only --bid-id <승인된ID>`를 추가. 관리 명령은 지정 공고만 직접 실행하며 큐를 drain하지 않음. **완료된 ID2에는 다시 실행하지 말 것**.
+- 추출 전용은 기존 add_attachment/_quick_process의 로컬 파싱·규칙 분류만 재사용하고 run_pipeline/회사자료 컨텍스트/제품 매칭/fit/판정/초안을 호출하지 않음. handler의 Boolean `payload.extraction_only=true`도 같은 범위이며 자동 판정 enqueue 생략. 등록/실패 상태만 허용하고 기존 매칭·fit·수동/잠금 요구조건·판정·초안이 있으면 호출 전에 거부해 보존.
+- 통합 입력에서 빈 텍스트 PDF를 버리던 경로 보완: **최종 bid.extract에 첨부4개의 입력과 사유서 원본 PDF FileInput1개**를 전달. 원본 PDF SHA를 실제 generate 요청에서 확인. 원본 PDF 직접 입력이지 OCR 텍스트·사람 전사문이 아님. PDF 사유서에서 나온 requirement6은 1페이지 이미지와 직접 대조함. HWP2/XLSX1은 저장 로컬 텍스트 입력. PDF 텍스트층은 여전히0자이며 원본 없이 내용을 만들어 채우지 않음.
+- 추출 전용에서는 비PDF 읽기 실패/누락 원본·PDF 미지원 모델·전체 첨부/렌더링 프롬프트 입력 한도 초과를 호출 전에 거부한다. JSON 복구 때도 원본 PDF 입력 유지. 다른 문서 단계에 PDF를 보냈다는 사실로 통합 입력을 추정하지 않음.
+- HWP PAGE/파서 pages·시트 순번을 물리 페이지로 저장하지 않음. HWP/XLSX source_page=null; PDF만 알려진 페이지 범위 내 저장. placeholder 문구는 ‘추출 결과에서 확인 못함 — 원문 확인 필요’로 수정하여 ‘공고에 명시되지 않음’을 확정하지 않음.
+- `extra.extraction_run`: 첨부 ID/원본 SHA·텍스트 SHA·입력 모드, 프롬프트 버전/요청 해시, provider/model 및 관련 파라미터, 실제 호출 로그 ID 기록. `extraction_source_review`는 인용의 문자/공백/인용부호 차이·미발견/첨부 누락·PDF 직접 확인 필요를 구분. 자동 기술 검증/개정 추적 시스템은 아니며 원문 인용을 자동으로 고쳐 만들지 않는다.
+
+## 원문 대조 완료 범위·미해결
+
+- 주요 기술/자격/납기/제출 **22묶음**을 원문과 대조하고 **37개 전부의 출처 연결/인용 대응**을 확인. 정확 문자열32, 공백 차이3, 인용 부호 차이1(req14; 공고문 추출L347의 따옴표 누락), PDF 이미지 직접 판독1(req6/p1). 인용 부호 차이를 정확 문자열 일치로 보고하지 않음. HWP 물리 페이지는 미확인 유지. XLSX는 통합 입력 포함 및 두 품목 자재번호·수량을 사람이 대조했으며 요구조건의 실제 인용 출처는 HWP2/PDF1이다.
+- 확인 범위: 공고번호/구매결의번호·기관 표기·마감, 원통/원추 두 품목·치수·각 수량, Synthetic/discharged·EPDM·Liner/End cap, F9/MERV·평균효율/중량 포집률, 초기/시험종료 차압·풍량·단위, EN7792012/ASHRAE52.2·분진·DEHS or KCL·감독 승인, 순유효면적·고습 변동·운전 환경, 제조 등록/직접생산/중소기업과 예외, 단일 계약 실적, 납기/분할·검수·납품 원본/부수·도면/QIP/ITP·하자·계약확약·KS 우선/승인 예외. **전체 기술·법적 완전성이나 정확도 비율/적격성은 검증하지 않음**.
+- 남은 문제: ① buyer_org가 본문 ‘울산화력발전처’를 ‘울산발전본부’로 정규화하여 원문 표기와 다름, ② SME 신청 예외/부적격4조건·조합2개사/배정비율/별도 참가 금지·특별법인 조건이 충분히 구조화되지 않음, ③ 온도 선행 대시/음수 부호와 min_temp_c=40 해석 미확정, ④ 초기 차압 조건의 원문 m/h→m³/h 추정·순유효면적 단위 미확정, ⑤ Liner/End cap OR가 required 배열에서 AND로 오용될 위험, ⑥ 시험 종료450Pa/시스템 총 풍량을 제품 성능 문턱과 혼동할 위험, ⑦ QIP ‘필요시’·KS ‘우선/승인 예외’와 필수 Boolean, 도면의 제작전 승인/모델 timing=납품시·부록 부수 차이, ⑧ 효율 metric slug/판본·표준 병행 조건의 후속 규칙 호환을 검토해야 함. 공급1400Set·각1400EA·공고1식은 포장/구성 단위 차이일 수 있어 모델의 ‘수량충돌’ 표기를 미달로 확정하지 않음.
+- 명확한 코드 문제 **AIRFLOW 값이 맞으면 unit을 넣지 않던 분기**는 공통 정규화에서 수정/회귀 검사. 실제 req32에는 **단위 m3/h 한 항목만 로컬 재정규화**했고 숫자/raw/원응답은 그대로. LLM 재호출0. 다른 의미/부호/예외를 추정 보정하지 않았으며 `extra.b5b_review`에 부분 검토와 해당 요구조건 ID를 기록. 이 검토 메타데이터를 프런트 경고로 표시하는 기능은 추가하지 않았으므로, 비교 단계 전에 미해결 항목을 검토해야 함.
+- 실제 원문·모델 응답·각 항목 조건/위치/질문은 Git 제외 `.venv/b5b/original-comparison-private.json`, `result-context-private.json`, `attempt-1-response-1.json`, `source-review-initial.json`, `local-normalization-and-review-apply.json`에 보존. 조건 미추출을 공고 전체 부재로 확정하지 않음. 결과를 고르기 위한 반복 호출/자동 판정은 하지 않음.
+
+## 회사자료 병행 준비 — 원본 성적서는 전체 비교의 선행조건 아님
+
+- 사용자 보충 지시 반영: **현재 카탈로그/실제 데이터시트로 확인되는 모델·형식·치수·재질·기재 성능은 해당 항목의 제조사 자료 근거로 비교 가능**. 카탈로그 정보를 전부 배제하지 않음. 명시 치수는 치수 비교 근거이며, 기재 성능은 제조사 주장 수준/조건을 표시한다. 이를 검증된 실측·기관 인정·다른 조건 시험·성적서 원본 제출 완료로 확대하지 않음. 원본/시험기관/시험조건 없이는 확정할 수 없는 요건만 별도 확인 필요로 두고, 미확보를 미보유/미달로 단정하지 않음.
+- 기존 카탈로그 p3왼쪽·소개서 p9의 실제 후보 필드/출처를 `.venv/b5b/company-comparison-preparation-private.json`에 재사용해 **현재 자료로 다음 비교에 착수 가능한 입력**을 준비. 독립 데이터시트는 기존 파일명 목록에서 확인되지 않아 있다고 만들지 않음. 도면은 모든 제품의 비교 선행자료가 아니며, 이 공고의 도면 제출/제작 승인 조항 또는 현 자료로 설치 치수를 못 확인하는 경우에만 설명한다.
+- 실무자 미팅 질문 **4개**를 실제 파일/페이지/행에 연결해 준비만 함(발송0): 카탈로그p3왼쪽/소개서p9의 제안 모델·옵션, 관리대장 성능10·55 관련 원본/소유·시료/시험조건, 카탈로그의 순유효면적·고습 차압변동을 보완할 자료, 소개서p23의 단일 계약 증빙. 원본은 다음 미팅에서 요청하며 **151행 전수 분류/성적서 확보/모든 도면 확보를 비교 착수 조건으로 요구하지 않음**. 제품·시료 추정 연결/정식 전환0. 활성 v2 프롬프트와 판정 정의는 이번에 변경하지 않았고 회사자료 비교 LLM을 호출하지 않음.
+
+## 보존·검증·백업·실행 상태
+
+- 작업 전 Git 제외 `.venv/b5b/before-b5b.dump`(623,927 bytes, SHA256 `30e6c310812fb25543a28c7cb798ac2e7a38467c911402ec3e6c5910373f0c9f`)에 **pg_export_snapshot과 같은 일관된 읽기 스냅샷으로 pg_dump -Fc**. `.venv/b5b/media-before.zip`(SHA256 `6d998aa4fdbb67a74e689244fa8d20fc32a37a47f9443612307d3424e3771dfc`)은 기존4파일의 CRC/내용 SHA 검증. pg_restore --list/TOC 확인, 실제 복원 시험은 미실행. .env/암호화 키를 새로 만들거나 DB 복원·migrate·초기화하지 않음.
+- 백업·원문·응답·토큰은 Git 제외/대화 미출력. 복구 필요 시 운영 DB 덮어쓰기 대신 먼저 별도 격리 DB에 dump를 복원해 원본/대상 행을 대조하고, 이 작업의 새 공고/첨부/추출/로그와 기존 수동 작업을 구분해 선택적으로 복구해야 한다. 미디어 zip은 기존 경로 원본을 별도 폴더에 풀어 SHA 대조 후 사용. **B5B에서 실제 복구/삭제를 실행하지 않음**.
+- 실제 public39테이블 해시 대조: 변경은 새 공고/첨부/품목/요구조건/문서/LLM로그의 **6테이블**뿐. 이6개에서도 새 대상 행을 제외한 전체 기존 행의 건수/해시가 시작과 동일. 다른33테이블·회사자료·PENDING151/UNKNOWN/세 nullable 검증값·기존 판정/수동/초안·설정/모델/키/프롬프트·.env 모두 동일. 기존 공고1 번호 불일치도 그대로. 기존media4파일/확인한 원본 SHA 보존. 새 업로드4개는 원본과 해시 일치.
+- 관련 최종 회귀 **364 passed, 1 deselected**. 첫 넓은 실행의 `test_item_matched_product_by_manager`는 기존 `company_data` 가상 원본 폴더 누락으로 setup error(당시353 passed/1 error). 이 비관련 검사는 명시적으로 제외하고 이유를 보존했으며 가상 자료 복원/테스트 삭제/일괄 skip/전체 통과 선언 안 함. 새 합성17검사는 추출 전용 경로/기본 동작 보존·판정 연쇄 금지·원본 PDF/JSON복구·입력 누락/렌더링 한도·출처/페이지/placeholder·정규화·기존 수동/판정/초안 보호 검사. 테스트 외부 socket 접속0, FakeProvider 사용이며 실제 API 결과와 구분.
+- 변경 Python4개 ruff check/format, Django check 문제0, makemigrations --check --dry-run 변경0, git diff --check 통과. check/migration 검사는 DB/네트워크 차단. 실제 공고 재추출/추가 유료 검증 없음.
+- 실제 서버 상태 API200(llm_configured=true), ID2 상세/품목/요구조건200(4첨부/2품목/37요구조건·fit null), ID1/관리대장151/활성v2 조회200. 반복 GET 후 새 LLM/Job/판정 없음. source/보호 검사 반영과 마지막 렌더링 입력 한도 검사 반영 때 **Django만 총2차례 재기동**, 기존 cwd/venv/.env/localhost:8000/--noreload 유지. 최종 launcher **4128**, listener **22936**. PostgreSQL **21016/5432**, 프런트 **15088/5173**는 재시작하지 않고 유지. `server-final-start.json`, `http-verification-final.json`, `final-exit-check.json`에 종료 확인 기록; 최종 반복 GET 후39테이블 전체가 보존 검사 시점과 동일. 상시 워커 없음.
+- 증거는 `.venv/b5b/`: `backup-verification.json`, `source-manifest.json`, `registration.json`, `execution-plan-before-call.json`, `attempt-1-started.json`, `attempt-1-result.json`, **`actual-call-receipt.json`**, `regressions-final-complete.log`, `check.log`, `migration-check.log`, `http-verification.json`, `preservation-verification.json`, `server-*.json`/서버 로그. 초기 HTTP hook이 SDK의 httpx2 대신 httpx를 감싸 0으로 적힌 원시 계수는 **확정 요청 수가 아님**. 설치된 SDK 경로/INFO httpx2의 200 한 건·SDK 재시도 로그0·generate 한 번·실제 로그/usage를 교차 대조한 `actual-call-receipt.json`의 **HTTP1/SDK0/JSON0**으로 정정 확정. 추가 호출로 계수를 확인하지 않음.
+
+## 다음 시작점
+
+- ID2는 실제 추출 성공·원문 일부 대조 상태이며 **회사 판정·적합도·초안은 미실행**. 일반 API의 ‘추출’은 기존 전체 연쇄 기본값이므로 완료 공고를 무심코 다시 실행하지 않는다. 원문 대조22묶음의 미해결 부분(기관/온도/단위/OR·예외·시점·시험조건/대상/정규화)을 사람이 확인·보완한 뒤, 현재 카탈로그의 항목별 근거로 다음 회사자료 비교에 착수할 수 있다. 원본 성적서는 해당 요건에 한해 후속 미팅 질문으로 병행한다.
+- `backend/docs/bid-extraction-only.md`에 명령/격리 범위·PDF/출처 처리·다음 회사자료 근거 범위 정리. 완전한 자료 개정/stale 추적은 여전히 미구현이며 `company-data-revision-plan.md`의 입력 식별·수동 보존 계약을 따른다. 직원 최종 결정 자동화·제품/시료 연결·일괄 자료 분석으로 확장하지 않고 B5B에서 멈춤.
+
+---
+
+# 이전 B5A 인수인계 (당시 관찰 기록)
 
 - 상태: **B5A 완료, 여기서 중단** (2026-10-22, Asia/Seoul). 저장 정책/활성 프롬프트 정합성 수정·검증과 시연 입력 준비 상태 확인까지. 실제 분석·추출·판정·초안·워커·제품 생성/연결·정식 전환·자료 적재·유료 LLM·연결 테스트 재실행 **0회**. 테스트의 합성 판정/가짜 응답은 실제 업무 분석과 구분한다.
 - 작업폴더/브랜치: `filtech-backend`, `feature/backend-foundation`. 깨끗한 `bfacaaf`에서 시작, B4B `5156670`과 서버 재개 이력 보존. 완료 커밋은 **이 기록을 포함한 HEAD** — `fix(backend): align stored evaluation policy and verify B5A readiness` (`git log -1 --oneline`). 변경은 backend/**와 이 파일뿐. 프런트·다른 worktree·팀 노션·기업 원본·루트 공통 문서 변경, push/초기화 없음.
