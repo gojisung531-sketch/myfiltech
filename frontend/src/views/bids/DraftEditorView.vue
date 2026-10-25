@@ -15,7 +15,9 @@ import {
 } from '@/api/drafts'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import EditableTable from '@/components/EditableTable.vue'
+import ReadableText from '@/components/ReadableText.vue'
 import { useToastStore } from '@/stores/toast'
+import { CANDIDATE_LABELS } from '@/utils/candidateLabels'
 import { downloadFile, PDF_TYPES, XLSX_CONTENT_TYPES } from '@/utils/download'
 import { errorMessage } from '@/utils/errors'
 import { formatDateTime } from '@/utils/format'
@@ -295,14 +297,59 @@ async function selectVersion(value, element) {
   router.replace({ query: next })
 }
 
-const newQuestion = () => ({
-  no: 0,
-  reference: '',
-  question: '',
-  background: '',
-  proposed_alternative: '',
-  requirement_id: 0,
+// 저장 시점 기준 정보(서버 기록). 이 값은 화면에서 편집하지 않고 저장 시에도 그대로 보존된다.
+const analysis = computed(() => content.value?.analysis_context || null)
+const dateOnly = (value) => (value ? String(value).slice(0, 10) : '')
+const ANALYSIS_LABELS = [
+  ['generation_mode', '생성 방식(서버 값)'],
+  ['input_sha256', '입력 해시'],
+  ['candidate_links_confirmed', '확정된 후보 연결 수'],
+  ['source_revision_tracking', '회사자료 개정 추적'],
+]
+
+// 기술질의서: 발주처 질의(questions)와 필텍 내부 확인(internal_questions)은 별도 목록이다.
+const tqSections = computed(() => {
+  if (type.value !== 'TECHNICAL_QUERY' || !content.value) return []
+  const list = [
+    {
+      key: 'questions',
+      title: '발주처 질의',
+      note: '발주처에 보내는 질의 목록입니다.',
+      noun: '질의',
+      audience: 'BUYER',
+    },
+  ]
+  if (Array.isArray(content.value.internal_questions)) {
+    list.push({
+      key: 'internal_questions',
+      title: '필텍 내부 확인',
+      note: '필텍 내부에서 먼저 확인할 항목입니다. 발주처 질의와 별도 목록이며 합쳐지지 않습니다.',
+      noun: '내부 확인',
+      audience: 'INTERNAL',
+    })
+  }
+  return list
 })
+
+function newQuestion(listKey, audience) {
+  const list = content.value[listKey] || []
+  return {
+    no: listKey === 'questions' ? 0 : Math.max(0, ...list.map((q) => Number(q.no) || 0)) + 1,
+    audience,
+    reference: '',
+    question: '',
+    background: '',
+    proposed_alternative: '',
+    requirement_id: 0,
+  }
+}
+
+// 대응표에 저장된 후보별 비교(참고). 최종 요구조건 판정(compliance)과 별개다.
+const candidateRows = computed(() =>
+  type.value === 'COMPLIANCE_MATRIX'
+    ? (content.value?.rows || []).filter((r) => r.candidate_comparisons?.length)
+    : [],
+)
 </script>
 
 <template>
@@ -412,6 +459,40 @@ const newQuestion = () => ({
           >이전 버전 — 저장하면 이 버전을 덮어씁니다</span
         >
         <span v-if="dirty" class="fw-semibold ms-2 dirty-note">저장하지 않은 변경 사항 있음</span>
+        <div class="mt-1 d-flex flex-wrap gap-1 align-items-center">
+          <span class="badge bg-secondary">{{ draft?.used_llm ? 'LLM 보강' : '규칙 기반' }}</span>
+          <span v-if="draft?.created_at" class="text-muted"
+            >생성일 {{ dateOnly(draft.created_at) }}</span
+          >
+          <span v-if="analysis?.saved_evaluation_date" class="text-muted"
+            >· 저장 판정 기준일 {{ analysis.saved_evaluation_date }}</span
+          >
+          <span v-if="analysis?.is_simulation" class="badge bg-info"
+            >과거 공고 · 기준일 시뮬레이션</span
+          >
+        </div>
+        <div v-if="analysis" class="text-muted mt-1">
+          저장 시점의 판정 기준입니다. 이후 회사자료·판정이 바뀌어도 이 초안은 자동으로 갱신되지
+          않습니다.
+        </div>
+        <details v-if="analysis" class="ft-help mt-1">
+          <summary>저장 기준 정보</summary>
+          <dl class="row mb-0 mt-1">
+            <dt class="col-sm-4 fw-normal">최종 판정 집계(저장 시점)</dt>
+            <dd class="col-sm-8 mb-0">
+              충족 {{ analysis.counts?.MET ?? '-' }} · 보완 필요
+              {{ analysis.counts?.NEEDS_SUPPLEMENT ?? '-' }} · 확인 필요
+              {{ analysis.counts?.NEEDS_CONFIRMATION ?? '-' }} · HIGH
+              {{ analysis.counts?.HIGH ?? '-' }} / 전체 {{ analysis.counts?.total ?? '-' }}
+            </dd>
+            <template v-for="[key, label] in ANALYSIS_LABELS" :key="key">
+              <template v-if="key in analysis">
+                <dt class="col-sm-4 fw-normal">{{ label }}</dt>
+                <dd class="col-sm-8 mb-0 text-break">{{ analysis[key] }}</dd>
+              </template>
+            </template>
+          </dl>
+        </details>
       </div>
 
       <!-- Compliance Matrix -->
@@ -454,6 +535,37 @@ const newQuestion = () => ({
               })
             "
           />
+          <details v-if="candidateRows.length" class="ft-help mt-3 border rounded p-2">
+            <summary class="fw-semibold">
+              후보별 카탈로그 비교 (참고 · 저장 시점) — 요구조건 {{ candidateRows.length }}개
+            </summary>
+            <p class="mb-2">
+              카탈로그 기재 사양 기준 참고입니다. 위 표의 최종 요구조건 판정과 별개이며, 제안
+              제품·옵션은 미확정입니다. 이 구역은 편집하지 않고 저장 시에도 그대로 보존됩니다.
+            </p>
+            <div
+              v-for="row in candidateRows"
+              :key="row.requirement_id ?? row.no"
+              class="cand-row mb-2"
+            >
+              <div class="fw-semibold text-body">
+                No {{ row.no }} · <ReadableText class="d-inline" :text="row.requirement" />
+              </div>
+              <div class="text-muted mb-1">최종 요구조건 판정(저장): {{ row.compliance }}</div>
+              <div v-for="(c, i) in row.candidate_comparisons" :key="i" class="cand-item">
+                <span class="fw-semibold text-body">{{ c.model_no }}</span>
+                <span class="badge bg-secondary ms-1">카탈로그 기준</span>
+                <span
+                  class="badge ms-1"
+                  :class="CANDIDATE_LABELS[c.candidate_verdict]?.cls || 'bg-secondary'"
+                  >{{ CANDIDATE_LABELS[c.candidate_verdict]?.text || c.candidate_verdict }}</span
+                >
+                <span v-if="c.comparison_label" class="ms-1">{{ c.comparison_label }}</span>
+                <ReadableText v-if="c.rationale" :text="c.rationale" />
+                <div v-if="c.scope_notice" class="text-muted">{{ c.scope_notice }}</div>
+              </div>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -515,58 +627,81 @@ const newQuestion = () => ({
             class="form-control form-control-sm mb-3"
             rows="2"
           ></textarea>
-          <div v-for="(q, qi) in content.questions" :key="qi" class="border rounded p-2 mb-2">
-            <div class="d-flex align-items-center mb-1">
-              <span class="fw-semibold me-2">질의 {{ qi + 1 }}</span>
-              <input
-                v-model="q.reference"
-                class="form-control form-control-sm me-2"
-                placeholder="관련 조항"
-                :aria-label="`질의 ${qi + 1} 관련 조항`"
-              />
-              <button
-                type="button"
-                class="btn btn-sm btn-link text-danger"
-                :aria-label="`질의 ${qi + 1} 삭제`"
-                @click="content.questions.splice(qi, 1)"
-              >
-                <i class="bi bi-trash"></i>
-              </button>
-            </div>
-            <textarea
-              v-model="q.question"
-              class="form-control form-control-sm mb-1"
-              rows="3"
-              :aria-label="`질의 ${qi + 1} 내용`"
-            ></textarea>
-            <div class="row g-1">
-              <div class="col-md-6">
-                <textarea
-                  v-model="q.background"
-                  class="form-control form-control-sm"
-                  rows="2"
-                  placeholder="배경"
-                  :aria-label="`질의 ${qi + 1} 배경`"
-                ></textarea>
-              </div>
-              <div class="col-md-6">
-                <textarea
-                  v-model="q.proposed_alternative"
-                  class="form-control form-control-sm"
-                  rows="2"
-                  placeholder="대체안"
-                  :aria-label="`질의 ${qi + 1} 대체안`"
-                ></textarea>
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            class="btn btn-sm btn-outline-secondary mb-3"
-            @click="content.questions.push(newQuestion())"
+          <section
+            v-for="sec in tqSections"
+            :key="sec.key"
+            class="tq-section mb-3"
+            :class="{ internal: sec.key === 'internal_questions' }"
           >
-            <i class="bi bi-plus-lg me-1"></i>질의 추가
-          </button>
+            <h3 class="h6 mb-0">
+              {{ sec.title }}
+              <span class="fw-normal text-muted">({{ content[sec.key].length }}건)</span>
+              <span
+                class="badge ms-1"
+                :class="sec.key === 'questions' ? 'bg-info' : 'bg-secondary'"
+                >{{
+                  sec.key === 'questions' ? '발주처 발송 대상' : '내부 확인 · 발주처 비발송'
+                }}</span
+              >
+            </h3>
+            <p class="small text-muted mb-2">{{ sec.note }}</p>
+            <div
+              v-for="(q, qi) in content[sec.key]"
+              :key="qi"
+              class="border rounded p-2 mb-2 bg-white"
+            >
+              <div class="d-flex align-items-center mb-1">
+                <span class="fw-semibold me-2 text-nowrap">{{ sec.noun }} {{ qi + 1 }}</span>
+                <input
+                  v-model="q.reference"
+                  class="form-control form-control-sm me-2"
+                  placeholder="관련 조항"
+                  :aria-label="`${sec.noun} ${qi + 1} 관련 조항`"
+                />
+                <button
+                  type="button"
+                  class="btn btn-sm btn-link text-danger"
+                  :aria-label="`${sec.noun} ${qi + 1} 삭제`"
+                  @click="content[sec.key].splice(qi, 1)"
+                >
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+              <textarea
+                v-model="q.question"
+                class="form-control form-control-sm mb-1"
+                rows="3"
+                :aria-label="`${sec.noun} ${qi + 1} 내용`"
+              ></textarea>
+              <div class="row g-1">
+                <div class="col-md-6">
+                  <textarea
+                    v-model="q.background"
+                    class="form-control form-control-sm"
+                    rows="2"
+                    placeholder="배경"
+                    :aria-label="`${sec.noun} ${qi + 1} 배경`"
+                  ></textarea>
+                </div>
+                <div class="col-md-6">
+                  <textarea
+                    v-model="q.proposed_alternative"
+                    class="form-control form-control-sm"
+                    rows="2"
+                    placeholder="대체안"
+                    :aria-label="`${sec.noun} ${qi + 1} 대체안`"
+                  ></textarea>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              @click="content[sec.key].push(newQuestion(sec.key, sec.audience))"
+            >
+              <i class="bi bi-plus-lg me-1"></i>{{ sec.noun }} 추가
+            </button>
+          </section>
           <label class="form-label small mb-0 d-block" for="tq-closing">맺음말</label>
           <textarea
             id="tq-closing"
@@ -630,10 +765,47 @@ const newQuestion = () => ({
               />
             </div>
             <div class="col-12 small text-muted">
-              적합도 {{ content.fit?.score ?? '-' }} · 충족 {{ content.stats?.met }} · 보완 필요
-              {{ content.stats?.needs_supplement }} · 확인 필요
+              적합도 {{ content.fit?.score ?? '미산정' }} · 충족 {{ content.stats?.met }} · 보완
+              필요 {{ content.stats?.needs_supplement }} · 확인 필요
               {{ content.stats?.needs_confirmation }} · HIGH {{ content.stats?.high_risk }} (생성
               시점 통계)
+            </div>
+            <div v-if="content.candidate_review?.length" class="col-12">
+              <details class="ft-help border rounded p-2">
+                <summary class="fw-semibold">
+                  후보 비교 검토 (참고 · 저장 시점) — {{ content.candidate_review.length }}건
+                </summary>
+                <p class="mb-2">
+                  카탈로그 후보 비교이며 최종 공고 판정과 별개입니다. 편집하지 않고 저장 시에도
+                  그대로 보존됩니다.
+                </p>
+                <div v-for="(c, i) in content.candidate_review" :key="i" class="cand-item mb-2">
+                  <div class="fw-semibold text-body">{{ c.title }}</div>
+                  <span class="text-body">{{ c.model_no }}</span>
+                  <span class="badge bg-secondary ms-1">카탈로그 기준</span>
+                  <span
+                    class="badge ms-1"
+                    :class="CANDIDATE_LABELS[c.candidate_verdict]?.cls || 'bg-secondary'"
+                    >{{ CANDIDATE_LABELS[c.candidate_verdict]?.text || c.candidate_verdict }}</span
+                  >
+                  <span v-if="c.comparison_label" class="ms-1">{{ c.comparison_label }}</span>
+                  <span class="ms-1">· 최종 판정(저장): {{ c.final_verdict }}</span>
+                  <ReadableText v-if="c.rationale" :text="c.rationale" />
+                  <div v-if="c.scope_notice" class="text-muted">{{ c.scope_notice }}</div>
+                </div>
+              </details>
+            </div>
+            <div v-if="content.unresolved_conditions?.length" class="col-12">
+              <details class="ft-help border rounded p-2">
+                <summary class="fw-semibold">
+                  미확정 조건 (저장 시점) — {{ content.unresolved_conditions.length }}건
+                </summary>
+                <ul class="mb-0 mt-2">
+                  <li v-for="(u, i) in content.unresolved_conditions" :key="i" class="text-break">
+                    {{ typeof u === 'string' ? u : JSON.stringify(u) }}
+                  </li>
+                </ul>
+              </details>
             </div>
           </div>
         </div>
@@ -657,5 +829,24 @@ const newQuestion = () => ({
 }
 .dirty-note {
   color: var(--ft-warn-fg);
+}
+.tq-section {
+  padding: 0.75rem;
+  border: 1px solid var(--ft-border);
+  border-left: 4px solid var(--ft-primary);
+  border-radius: 0.4rem;
+  background: var(--ft-bg);
+}
+.tq-section.internal {
+  border-left-color: var(--ft-border-strong);
+}
+.cand-row {
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--ft-border);
+}
+.cand-item {
+  padding: 0.3rem 0.5rem;
+  margin-bottom: 0.3rem;
+  border-left: 3px solid var(--ft-border-strong);
 }
 </style>

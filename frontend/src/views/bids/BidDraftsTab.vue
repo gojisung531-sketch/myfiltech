@@ -164,8 +164,11 @@ async function download(draft, format) {
                   <span class="badge bg-secondary">{{
                     d.latest.used_llm ? 'LLM 보강' : '규칙 기반'
                   }}</span>
+                  <span v-if="d.latest.created_at" class="text-muted"
+                    >생성 {{ formatDateTime(d.latest.created_at) }} ·</span
+                  >
                   <span class="text-muted">
-                    {{ formatDateTime(d.latest.updated_at) }}
+                    수정 {{ formatDateTime(d.latest.updated_at) }}
                     <template v-if="d.latest.updated_by_name"
                       >· {{ d.latest.updated_by_name }}</template
                     >

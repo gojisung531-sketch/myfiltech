@@ -12,6 +12,7 @@ import ReadableText from '@/components/ReadableText.vue'
 import RiskDot from '@/components/RiskDot.vue'
 import VerdictBadge from '@/components/VerdictBadge.vue'
 import { useToastStore } from '@/stores/toast'
+import { CANDIDATE_LABELS } from '@/utils/candidateLabels'
 import { errorMessage } from '@/utils/errors'
 
 const props = defineProps({
@@ -105,11 +106,6 @@ function open(target, kind, row) {
 
 // ---- 후보별 카탈로그 비교 (서버 값만 표시, 프런트에서 계산하지 않음) ----
 // 서버 verdict 문자열을 후보 비교용 업무 용어로만 바꿔 보여 준다.
-const CANDIDATE_LABELS = {
-  MET: { text: '충족', cls: 'bg-success' },
-  NEEDS_SUPPLEMENT: { text: '미달', cls: 'bg-warning' },
-  NEEDS_CONFIRMATION: { text: '확인 필요', cls: 'bg-info' },
-}
 
 // 제품 ID로만 후보와 비교 결과를 연결한다(배열 순서·모델명 유사성 사용 안 함).
 function candidatePairs(row) {
