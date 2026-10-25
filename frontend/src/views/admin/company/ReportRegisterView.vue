@@ -377,9 +377,15 @@ function onKey(event) {
                   >
                 </td>
                 <td class="text-break">
-                  <span :class="{ 'text-muted text-nowrap': listText(r.summary.model).empty }">{{
-                    listText(r.summary.model).text
-                  }}</span>
+                  <span
+                    :class="{ 'text-muted text-nowrap': listText(r.summary.model).empty }"
+                    :title="
+                      listText(r.summary.model).empty
+                        ? '목록 응답으로는 원본 칸이 비어 있는지 열이 없는지 구분할 수 없습니다. 상세에서 확인하세요.'
+                        : ''
+                    "
+                    >{{ listText(r.summary.model).text }}</span
+                  >
                 </td>
                 <td class="text-break">
                   <span
@@ -407,7 +413,7 @@ function onKey(event) {
                     REVIEW_STATUS[r.review.review_status] || r.review.review_status
                   }}</span>
                   <div class="text-muted mt-1">
-                    {{ OWNERSHIP[r.review.ownership] || r.review.ownership }} ·
+                    소유 {{ OWNERSHIP[r.review.ownership] || r.review.ownership }} · 시험 대상
                     {{ TEST_TARGET[r.review.test_target] || r.review.test_target }}
                   </div>
                 </td>

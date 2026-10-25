@@ -8,6 +8,7 @@ import { bidItems, getComparison } from '@/api/bids'
 import BaseModal from '@/components/BaseModal.vue'
 import DocumentOffcanvas from '@/components/DocumentOffcanvas.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import ReadableText from '@/components/ReadableText.vue'
 import RiskDot from '@/components/RiskDot.vue'
 import VerdictBadge from '@/components/VerdictBadge.vue'
 import { useToastStore } from '@/stores/toast'
@@ -269,7 +270,7 @@ const hasRefs = (row) =>
                   <div class="fw-semibold text-break">{{ row.title }}</div>
                 </td>
                 <td class="text-break">
-                  {{ row.requirement_value }}
+                  <ReadableText :text="row.requirement_value" />
                 </td>
                 <td class="text-break">
                   <template v-if="row.product">
@@ -313,8 +314,8 @@ const hasRefs = (row) =>
                       </div>
                       <div v-else class="mt-1 text-muted">이 항목의 기재 사양 없음</div>
                       <div v-if="pair.result?.rationale" class="mt-1">
-                        <span class="text-muted">비교 사유</span>
-                        {{ pair.result.rationale }}
+                        <div class="text-muted">비교 사유</div>
+                        <ReadableText :text="pair.result.rationale" />
                       </div>
                       <button
                         class="btn btn-link btn-sm p-0 text-start small"
@@ -336,10 +337,10 @@ const hasRefs = (row) =>
                     <span class="text-muted">미확정 (제안 제품·옵션 확인 필요)</span>
                     <details v-if="row.company_value" class="ft-help mt-1">
                       <summary>서버 기록 값</summary>
-                      <p class="text-break">{{ row.company_value }}</p>
+                      <ReadableText :text="row.company_value" mode="candidates" />
                     </details>
                   </template>
-                  <template v-else-if="row.company_value">{{ row.company_value }}</template>
+                  <ReadableText v-else-if="row.company_value" :text="row.company_value" />
                   <span v-else class="text-muted">
                     {{ row.verdict ? '기록된 회사 값 없음' : '판정 전' }}
                   </span>
@@ -391,9 +392,11 @@ const hasRefs = (row) =>
                   </div>
                   <div v-if="row.interpretation_review" class="mt-1">
                     <span class="badge bg-warning">원문 해석 확인 필요</span>
-                    <div v-if="row.interpretation_review.reason" class="text-break mt-1">
-                      {{ row.interpretation_review.reason }}
-                    </div>
+                    <ReadableText
+                      v-if="row.interpretation_review.reason"
+                      class="mt-1"
+                      :text="row.interpretation_review.reason"
+                    />
                     <button
                       v-if="row.interpretation_review.source_document_id"
                       class="btn btn-link btn-sm p-0 text-start small"
@@ -404,7 +407,7 @@ const hasRefs = (row) =>
                   </div>
                   <details v-if="row.rationale" class="ft-help mt-1">
                     <summary>최종 판정 사유</summary>
-                    <p class="text-break">{{ row.rationale }}</p>
+                    <ReadableText :text="row.rationale" />
                   </details>
                 </td>
               </tr>
@@ -440,10 +443,36 @@ const hasRefs = (row) =>
 
 <style scoped>
 .compare-table {
-  min-width: 60rem;
+  min-width: 78rem;
+  table-layout: fixed;
 }
-.compare-table td:nth-child(3) {
-  min-width: 18rem;
+.compare-table th,
+.compare-table td {
+  padding: 0.7rem 0.85rem;
+  border-left: 1px solid var(--ft-border);
+  vertical-align: top;
+}
+.compare-table th:first-child,
+.compare-table td:first-child {
+  border-left: 0;
+}
+.compare-table th:nth-child(1) {
+  width: 10rem;
+}
+.compare-table th:nth-child(2) {
+  width: 15rem;
+}
+.compare-table th:nth-child(3) {
+  width: 22rem;
+}
+.compare-table th:nth-child(4) {
+  width: 10rem;
+}
+.compare-table th:nth-child(5) {
+  width: 9rem;
+}
+.compare-table th:nth-child(6) {
+  width: 12rem;
 }
 .cand {
   padding: 0.4rem 0.6rem;

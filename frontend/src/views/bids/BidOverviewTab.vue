@@ -6,6 +6,7 @@ import { bidItems, bidRequirements } from '@/api/bids'
 import { downloadDocument } from '@/api/documents'
 import DocumentOffcanvas from '@/components/DocumentOffcanvas.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import ReadableText from '@/components/ReadableText.vue'
 import { useToastStore } from '@/stores/toast'
 import { errorMessage } from '@/utils/errors'
 import {
@@ -15,6 +16,7 @@ import {
   formatNumber,
   productDimension,
 } from '@/utils/format'
+import { describeNormalized } from '@/utils/normalizedLabels'
 import { REQUIREMENT_CATEGORIES } from '@/utils/options'
 
 const props = defineProps({ bid: { type: Object, required: true } })
@@ -62,12 +64,8 @@ const filtered = computed(() => {
   })
 })
 
-// 정규화 값은 서버가 준 키를 그대로 보여 준다(의미를 덧붙이거나 숨기지 않는다).
-function normalizedEntries(r) {
-  return Object.entries(r.normalized || {})
-    .filter(([k]) => k !== 'placeholder')
-    .map(([k, v]) => [k, typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)])
-}
+// 의미가 확인된 키만 한글 표시명·단위로 보여 주고, 모르는 키는 원본 키 그대로 둔다(원본 키는 툴팁).
+const normalizedEntries = (r) => describeNormalized(r.normalized)
 const emptyViewer = {
   documentId: null,
   page: 0,
@@ -133,23 +131,85 @@ const groups = computed(() => {
 
 const itemLabel = (item) => (item ? `${item.item_no || '-'}. ${item.name}` : '')
 
-const overview = computed(() => {
+// ---- 공고 요약: 구조화 필드를 우선 쓰고, 서술문은 원문을 그대로 보존한다 ----
+const dash = (v) => (v === null || v === undefined || v === '' ? null : v)
+const SUMMARY_GROUPS = {
+  qualification: ['CERTIFICATION', 'TRACK_RECORD', 'SUBMISSION_DOC'],
+  contract: ['DELIVERY', 'WARRANTY'],
+}
+const reqsOf = (categories) =>
+  requirements.value
+    .filter((r) => categories.includes(r.category))
+    .map((r) => ({
+      id: r.id,
+      title: r.title,
+      mandatory: r.is_mandatory,
+      category: r.category_label,
+    }))
+const summarySections = computed(() => {
   const b = props.bid
   return [
-    ['입찰 개시', formatDateTime(b.bid_open_at)],
-    ['입찰 마감', formatDateTime(b.bid_close_at)],
-    ['개찰', formatDateTime(b.opening_at)],
-    ['자격 등록 마감', formatDateTime(b.qualification_deadline_at)],
-    ['배정예산', formatKrw(b.budget_krw)],
-    ['추정가격', formatKrw(b.estimated_price_krw)],
-    ['입찰방법', b.bid_method || '-'],
-    ['물품분류', [b.item_category_code, b.item_category_name].filter(Boolean).join(' ') || '-'],
-    ['납품기한', b.delivery_terms || '-'],
-    ['납품장소', b.delivery_place || '-'],
-    ['하자보증', b.warranty_terms || '-'],
-    ['계약기관', b.contracting_org || '-'],
+    {
+      key: 'target',
+      title: '구매 대상',
+      facts: [
+        ['물품분류', dash([b.item_category_code, b.item_category_name].filter(Boolean).join(' '))],
+        ['입찰방법', dash(b.bid_method)],
+        ['사업장', dash(b.plant_name)],
+        ['수요기관', dash(b.buyer_org)],
+        ['계약기관', dash(b.contracting_org)],
+        ['배정예산', b.budget_krw == null ? null : formatKrw(b.budget_krw)],
+        ['추정가격', b.estimated_price_krw == null ? null : formatKrw(b.estimated_price_krw)],
+      ],
+      items: items.value.map(
+        (i) =>
+          `${itemLabel(i)}${i.spec_text ? ` — ${i.spec_text}` : ''}${
+            i.quantity != null ? ` · ${formatNumber(i.quantity)} ${i.unit || ''}` : ''
+          }`,
+      ),
+      reqs: [],
+    },
+    {
+      key: 'qualification',
+      title: '참가 자격',
+      facts: [['자격 등록 마감', dash(formatDateTime(b.qualification_deadline_at))]],
+      items: [],
+      reqs: reqsOf(SUMMARY_GROUPS.qualification),
+    },
+    {
+      key: 'schedule',
+      title: '일정',
+      facts: [
+        ['입찰 개시', dash(formatDateTime(b.bid_open_at))],
+        ['입찰 마감', dash(formatDateTime(b.bid_close_at))],
+        ['개찰', dash(formatDateTime(b.opening_at))],
+      ],
+      items: [],
+      reqs: [],
+    },
+    {
+      key: 'contract',
+      title: '계약 조건',
+      facts: [
+        ['납품기한', dash(b.delivery_terms)],
+        ['납품장소', dash(b.delivery_place)],
+        ['하자보증', dash(b.warranty_terms)],
+      ],
+      items: [],
+      reqs: reqsOf(SUMMARY_GROUPS.contract),
+    },
   ]
 })
+// 서버가 '원문 해석 확인 필요'로 표시한 요구조건(확인 사항)
+const reviewItems = computed(() =>
+  requirements.value
+    .filter((r) => r.normalized?.interpretation_review)
+    .map((r) => ({
+      id: r.id,
+      title: r.title,
+      reason: r.normalized.interpretation_review.reason || '',
+    })),
+)
 
 function openSource(r) {
   // source_attachment는 첨부 ID다. 문서 ID는 첨부 목록의 document_id에서만 가져온다.
@@ -196,16 +256,57 @@ async function download(attachment) {
       <div class="col-lg-7">
         <div class="card h-100">
           <div class="card-header fw-semibold">공고 요약</div>
-          <div class="card-body small">
-            <p class="mb-3" style="white-space: pre-line">
-              {{ bid.summary || '저장된 요약이 없습니다.' }}
-            </p>
-            <dl class="row mb-0">
-              <template v-for="[label, value] in overview" :key="label">
-                <dt class="col-sm-3 fw-normal text-muted">{{ label }}</dt>
-                <dd class="col-sm-9 mb-1">{{ value }}</dd>
-              </template>
-            </dl>
+          <div class="card-body small summary">
+            <section v-for="sec in summarySections" :key="sec.key" class="sum-sec">
+              <h3 class="sum-title">{{ sec.title }}</h3>
+              <dl class="sum-facts">
+                <div v-for="[label, value] in sec.facts" :key="label" class="sum-fact">
+                  <dt>{{ label }}</dt>
+                  <dd class="text-break">
+                    <template v-if="value">{{ value }}</template>
+                    <span v-else class="text-muted">미기재</span>
+                  </dd>
+                </div>
+              </dl>
+              <ul v-if="sec.items.length" class="sum-list list-unstyled ps-0">
+                <li v-for="(line, i) in sec.items" :key="i" class="text-break">{{ line }}</li>
+              </ul>
+              <div v-if="sec.reqs.length" class="sum-reqs">
+                <div class="text-muted">관련 요구조건 (저장된 요구사항)</div>
+                <ul class="sum-list">
+                  <li v-for="r in sec.reqs" :key="r.id" class="text-break">
+                    {{ r.title }}
+                    <span v-if="r.mandatory" class="badge bg-danger ms-1">필수</span>
+                    <span class="text-muted ms-1">{{ r.category }}</span>
+                  </li>
+                </ul>
+              </div>
+            </section>
+
+            <section class="sum-sec">
+              <h3 class="sum-title">확인 사항</h3>
+              <p v-if="!reviewItems.length" class="text-muted mb-1">
+                서버가 '원문 해석 확인 필요'로 표시한 요구조건이 없습니다(원문 확인이 불필요하다는
+                뜻은 아닙니다).
+              </p>
+              <details v-else class="ft-help mb-1">
+                <summary>원문 해석 확인 필요 요구조건 {{ reviewItems.length }}건</summary>
+                <ul class="sum-list">
+                  <li v-for="r in reviewItems" :key="r.id" class="text-break">
+                    <strong>{{ r.title }}</strong>
+                    <div v-if="r.reason" class="text-muted">{{ r.reason }}</div>
+                  </li>
+                </ul>
+              </details>
+            </section>
+
+            <section class="sum-sec">
+              <h3 class="sum-title">
+                요약문 <span class="fw-normal text-muted">(서버 저장 원문)</span>
+              </h3>
+              <ReadableText v-if="bid.summary" :text="bid.summary" />
+              <p v-else class="text-muted mb-0">저장된 요약이 없습니다.</p>
+            </section>
           </div>
         </div>
       </div>
@@ -424,13 +525,19 @@ async function download(attachment) {
               <span v-if="groupBy === 'item'" class="text-muted ms-1"
                 >· {{ r.category_label }}</span
               >
-              <div class="text-muted text-break">{{ r.requirement_text }}</div>
+              <ReadableText class="text-muted" :text="r.requirement_text" />
               <details v-if="normalizedEntries(r).length || r.source_quote" class="ft-help mt-1">
                 <summary>조건·단위·저장된 인용문</summary>
                 <dl v-if="normalizedEntries(r).length" class="row mb-1">
-                  <template v-for="[k, v] in normalizedEntries(r)" :key="k">
-                    <dt class="col-sm-4 fw-normal">{{ k }}</dt>
-                    <dd class="col-sm-8 mb-0 text-break">{{ v }}</dd>
+                  <template v-for="e in normalizedEntries(r)" :key="e.key">
+                    <dt class="col-sm-4 fw-normal" :title="`원본 키: ${e.key}`">
+                      {{ e.label }}
+                      <code v-if="!e.known" class="ms-1 text-muted">(원본 키)</code>
+                    </dt>
+                    <dd class="col-sm-8 mb-0 text-break">
+                      <span v-if="e.value === null" class="text-muted">(비어 있음)</span>
+                      <template v-else>{{ e.value }}{{ e.unit ? ` ${e.unit}` : '' }}</template>
+                    </dd>
                   </template>
                 </dl>
                 <p v-if="r.source_quote" class="mb-0 text-break">
@@ -470,6 +577,41 @@ async function download(attachment) {
 </template>
 
 <style scoped>
+.sum-sec {
+  padding-bottom: 0.9rem;
+  margin-bottom: 0.9rem;
+  border-bottom: 1px solid var(--ft-border);
+}
+.sum-sec:last-child {
+  border-bottom: 0;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+.sum-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.sum-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.35rem 1.25rem;
+  margin: 0 0 0.35rem;
+}
+.sum-fact dt {
+  font-weight: 400;
+  color: var(--ft-muted);
+}
+.sum-fact dd {
+  margin: 0;
+}
+.sum-list {
+  margin: 0.25rem 0 0.35rem;
+  padding-left: 1.1rem;
+}
+.sum-list li {
+  margin-bottom: 0.2rem;
+}
 .item-table {
   min-width: 40rem;
 }

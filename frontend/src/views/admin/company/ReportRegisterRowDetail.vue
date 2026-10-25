@@ -44,6 +44,27 @@ const payload = computed(() => row.value?.payload || {})
 const fields = computed(() => Object.entries(payload.value.fields || {}))
 const warnings = computed(() => payload.value.warnings || [])
 const unmapped = computed(() => payload.value.unmapped_cells || [])
+// 목록 요약 항목이 원본에서 어떤 상태인지: 저장된 필드 자체가 없으면 '열 없음', 키는 있고 값이 null이면 '칸 비어 있음'.
+const SUMMARY_FIELDS = [
+  ['report_no', '성적서번호'],
+  ['model', '모델'],
+  ['sample_name', '시료명'],
+  ['test_standard', '시험규격'],
+  ['lab_name', '시험기관'],
+  ['issue_date', '발행일'],
+]
+const summaryStates = computed(() =>
+  SUMMARY_FIELDS.map(([key, label]) => {
+    const all = payload.value.fields || {}
+    if (!(key in all)) return { key, label, state: '원본에 열 없음(저장된 필드 없음)', muted: true }
+    const value = all[key]?.value
+    if (value === null || value === undefined) {
+      return { key, label, state: '원본 칸 비어 있음(값 없음)', muted: true }
+    }
+    if (value === '') return { key, label, state: '빈 문자열', muted: true }
+    return { key, label, state: '값 있음', muted: false }
+  }),
+)
 const KNOWN = ['fields', 'review', 'source', 'warnings', 'unmapped_cells']
 const extra = computed(() =>
   Object.fromEntries(Object.entries(payload.value).filter(([k]) => !KNOWN.includes(k))),
@@ -119,6 +140,14 @@ function normalizedText(f) {
           </tbody>
         </table>
       </div>
+
+      <h3 class="h6">목록 요약 항목의 원본 상태</h3>
+      <dl class="state-grid small mb-3">
+        <div v-for="s in summaryStates" :key="s.key">
+          <dt>{{ s.label }}</dt>
+          <dd :class="{ 'text-muted': s.muted }">{{ s.state }}</dd>
+        </div>
+      </dl>
 
       <h3 class="h6">
         저장된 필드 값 <span class="fw-normal text-muted">({{ fields.length }}개)</span>
@@ -244,6 +273,18 @@ function normalizedText(f) {
 </template>
 
 <style scoped>
+.state-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.3rem 1rem;
+}
+.state-grid dt {
+  font-weight: 400;
+  color: var(--ft-muted);
+}
+.state-grid dd {
+  margin: 0;
+}
 .warn-table {
   min-width: 26rem;
 }

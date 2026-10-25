@@ -13,6 +13,7 @@ import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import DocumentOffcanvas from '@/components/DocumentOffcanvas.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import ReadableText from '@/components/ReadableText.vue'
 import RiskDot from '@/components/RiskDot.vue'
 import VerdictBadge from '@/components/VerdictBadge.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -476,26 +477,22 @@ function doReevaluate() {
               <div class="col-lg-7">
                 <section class="mb-3">
                   <div class="detail-label">공고 요구조건 (저장된 요구사항)</div>
-                  <p class="mb-0 text-break">{{ row.requirement_text || row.title }}</p>
+                  <ReadableText :text="row.requirement_text || row.title" />
                 </section>
                 <section class="mb-3">
                   <div class="detail-label">회사 대응 값 (판정 시 서버 기록)</div>
-                  <p v-if="row.evaluation.company_value" class="mb-0 text-break">
-                    {{ row.evaluation.company_value }}
-                  </p>
+                  <ReadableText
+                    v-if="row.evaluation.company_value"
+                    :text="row.evaluation.company_value"
+                    mode="candidates"
+                  />
                   <p v-else class="mb-0 text-muted">
                     미제공 (자료 미등록·연결 없음일 수 있음 — 미보유 아님)
                   </p>
                 </section>
                 <section class="mb-3">
                   <div class="detail-label">판정 사유</div>
-                  <p
-                    v-if="row.evaluation.rationale"
-                    class="mb-0 text-break"
-                    style="white-space: pre-line"
-                  >
-                    {{ row.evaluation.rationale }}
-                  </p>
+                  <ReadableText v-if="row.evaluation.rationale" :text="row.evaluation.rationale" />
                   <p v-else class="mb-0 text-muted">미제공</p>
                   <div v-if="row.evaluation.rule_trace?.interpolation" class="text-muted mt-1">
                     계산: {{ row.evaluation.rule_trace.interpolation }}
@@ -514,9 +511,10 @@ function doReevaluate() {
                   <div class="detail-label">
                     답변 초안 <span class="fw-normal text-muted">· 자동 제출 안 됨</span>
                   </div>
-                  <p v-if="row.evaluation.auto_answer" class="mb-0 text-break">
-                    {{ row.evaluation.auto_answer }}
-                  </p>
+                  <ReadableText
+                    v-if="row.evaluation.auto_answer"
+                    :text="row.evaluation.auto_answer"
+                  />
                   <p v-else class="mb-0 text-muted">미제공</p>
                 </section>
                 <section class="mb-3">
@@ -533,12 +531,11 @@ function doReevaluate() {
                     발주처 질의 초안
                     <span class="fw-normal text-muted">· 자동 발송 안 됨</span>
                   </div>
-                  <p
+                  <ReadableText
                     v-if="row.evaluation.clarification_question"
-                    class="border-start border-3 ps-2 mb-0 text-break"
-                  >
-                    {{ row.evaluation.clarification_question }}
-                  </p>
+                    class="border-start border-3 ps-2"
+                    :text="row.evaluation.clarification_question"
+                  />
                   <p v-else class="mb-0 text-muted">미제공</p>
                 </section>
               </div>
