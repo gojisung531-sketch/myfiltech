@@ -1,3 +1,53 @@
+# 백엔드 인수인계 — Backend B5D
+
+- 상태: **B5D 완료, 여기서 중단** (2026-10-26, Asia/Seoul). 코드 확인에 그치지 않고 공고 ID2의 실제 저장 판정으로 규칙 초안 4종을 저장하고 실제 API에서 XLSX 2개·PDF 5개를 내려받아 내용/렌더링을 확인했다. 새 LLM 요청·SDK 재시도·JSON 복구·재추출·재판정·상시 워커 실행은 모두 **0**.
+- `feature/backend-foundation`, 깨끗한 B5C **f5133cc** 이후 이어감. 완료 커밋은 **이 기록을 포함한 HEAD** — `feat(backend): generate and verify stored draft exports`. 변경은 backend/**와 이 파일뿐. 프런트·다른 worktree·노션·기업 원본·루트 공통 문서 변경, 초기화/push/배포 없음.
+
+## 실제 생성·저장과 버전
+
+- 기존 `apps/drafts.service.generate_draft`로 **allow_llm=False, new_version=True**를 명시해 최초 한 차례 생성. 대응표 **ID1/v1**, 체크리스트 **ID2/v1**, 기술질의서 **ID3/v1**, 검토보고서 **ID4/v1**. 모두 AUTO/DRAFT, used_llm=false, is_modified=false. 저장 전 초안은 0개였으며 저장 후 JSON을 실제 GET으로 다시 대조했다. 출력 형식을 보완할 때 초안을 다시 생성하거나 저장 내용을 덮어쓰지 않았다.
+- 일반 생성 API는 선택 Boolean `allow_llm`을 작업에 전달하며 생략 시 기존 기본 동작을 보존한다. 전역 AI 설정/키/모델/활성 v2 프롬프트는 변경하지 않았다. 기존 정책상 수정되지 않은 자동 초안은 기본 재생성 시 같은 버전을 갱신하고, `new_version=True` 또는 수동 수정본은 다음 버전을 만든다. 수동본 보호는 격리 회귀 검사로 확인했다.
+- 4종 모두 **저장 판정 기준일 2026-10-25**, 생성일 2026-10-26을 구분하고 동일한 판정/정규화/trace 입력 SHA와 검토 고지를 저장했다. **최종 37개 확인 필요**와 **후보별 비교 12개**를 분리했다. 후보 일치/차이를 확정 충족/미달·시험 성적서 제출 완료로 올리지 않았다.
+- 체크리스트 **21항목**, 제작 전 승인 시점을 별도 표시. 기술질의서는 **내부 확인31 / 발주처 확인4**로 분리하고 이미 기재된 형식·치수 자체를 다시 질문하지 않는다. 검토보고서의 CONDITIONAL은 **추가 확인 후 직원 검토**, 점수 null은 미산정, 직원 최종 결정/제출본 아님을 명시한다. 자료 미등록을 미보유·입찰 불가로 단정하지 않는다.
+
+## 실제 다운로드·파일 검증
+
+- 최종 결과물은 모두 Git 제외 **backend/.venv/b5d/outputs-final/**. 아래 개별 4종은 저장 **v1**, 통합도 동일한 4개 v1 JSON을 한 조회에서 선택해 사용한다. 실제 저장 조회·다운로드 API 모두 200, MIME/크기/ZIP CRC 또는 PDF 파싱을 확인했다.
+  - `COMPLIANCE_MATRIX_v1.xlsx`: 대응표 **37행** + 별도 후보 비교 시트 **12행**.
+  - `BID_CHECKLIST_v1.xlsx`: 단일 시트 **21항목**.
+  - `COMPLIANCE_MATRIX_v1.pdf`: **12페이지**.
+  - `BID_CHECKLIST_v1.pdf`: **4페이지**.
+  - `TECHNICAL_QUERY_v1.pdf`: **3페이지**.
+  - `REVIEW_REPORT_v1.pdf`: **3페이지**.
+  - `INTEGRATED_REPORT.pdf`: **30페이지** (표지·검토보고서·요구조건/판정·대응표·체크리스트·기술질의서).
+- XLSX는 저장 JSON과 대응표 37행×10열·체크리스트 21항목·후보 12행을 대조하고 한글/근거/판정·필터·고정 머리행·수식 셀 없음 확인. 수식 주입 보호를 모든 외부 문자열에 적용하며 선행 공백/탭/개행과 XML 제어문자를 처리하고 숫자는 숫자로 보존한다. 실제 다운로드 파일을 Artifact Tool로 읽어 **3시트의 대표 6범위**를 렌더링/시각 확인했으며 파일을 재수출하지 않았다.
+- PDF는 **5파일 전체 52페이지**를 PDFium으로 렌더링하고 연락판/긴 표와 후보 구획을 확대 확인했다. 모든 페이지의 한글 폰트 임베딩·페이지 경계·깨진 글리프를 검사. 개별/통합 양쪽에서 대응표 37개 요구조건/최종 판정, 체크리스트 21항목, 내부31/외부4 질문, 검토보고서 총평/미확정 조건의 실제 텍스트를 대조했다. 최종 검사 오류 **0**. 긴 문장·표 셀·후보 제목/근거 묶음·가로/세로 페이지 전환·v1 표기를 확인했다. 일부 표는 다음 페이지로 이어지며 내용이 누락되지 않는다.
+- 실제 Excel 데스크톱/브라우저 화면 조작 검증은 하지 않았다. 합성 검사와 실제 파일 검증을 전체 분석 정확도나 법적/기술적 완전성으로 표현하지 않는다. 초기 `outputs/`는 형식 보완 전 기록이며 **최종 전달은 outputs-final/**이다.
+
+## PDF 실행 환경과 관련 검사
+
+- 기존 WeasyPrint 70의 libgobject-2.0-0 로딩 실패를 재현했다. 공식 MSYS2 저장소 메타데이터/패키지 SHA를 검증해 Pango 의존성 **39패키지의 런타임 파일119개**를 `.venv/pdf-runtime/mingw64`에 분리 추출했다. 시스템 설치/후처리 실행·Python 재설치·.env 초기화 없음. 패키지 버전/URL/SHA·라이선스는 `.venv/pdf-runtime/manifest.json`과 share/licenses에 있다.
+- 기존 Noto Sans KR 두 폰트/OFL 사본의 SHA를 대조했다. 기존 P:→이 backend/.venv 별칭을 유지하며 프로세스에 `WEASYPRINT_DLL_DIRECTORIES=P:/pdf-runtime/mingw64/bin`, `FONTCONFIG_FILE=P:/pdf-runtime/fonts.conf`를 전달했다. Fontconfig는 같은 별칭의 폰트/캐시를 사용한다. 실제 개발 서버에서 한글 PDF 생성/다운로드 성공. 시스템 전역 환경/.env는 그대로다.
+- `backend/docs/draft-output-b5d.md`에 실행/버전 정책·Windows 준비·이후 Render의 Pango/GObject/PangoFT2/HarfBuzz/Fontconfig와 한글 폰트/OFL·캐시 조건을 기록했다. Render 배포/원격 설정 변경은 하지 않았고 실제 Linux 렌더링은 후속 배포 환경에서 별도 확인해야 한다.
+- 관련 회귀 **7 passed** (`apps/drafts/tests/test_stored_outputs.py` 6개 + 기존 validate_content 1개). 규칙 저장·수동 버전 보존·질문 구분·확인 필요/조건부·후보와 최종 구분·XLSX 주입 방지·실제 네이티브 PDF·API 저장 조회/출력 경로 검사. 테스트 Python 외부 socket 시도0, 유료 통신 대체/금지. 가상 회사자료 fixture 복원이나 관련 없는 전체 검사 반복 없음.
+- drafts Python16개 ruff check/format, Django check(문제0), git diff --check 통과. 모델/마이그레이션 변경 없음. 검사 기록 `regressions-final.log`, `check.log`, 실제 파일 검사 `file-review-private-final.json`/`file-inspection-final.log`, `xlsx-render-final.log`.
+
+## 보존·동시 변경·서버
+
+- 작업 전 일관된 읽기 스냅샷으로 `.venv/b5d/before-b5d.dump` (**714732 bytes**, SHA256 `b8735cfa693843606c77c074b38f87deb920f86d5075b110704e406be76dcfa9`)와 `media-before.zip` (SHA256 `fee72b124564b0ccd6fd5df669a3286db5dd5d13537ea87c073131350b14ec1d`) 생성. TOC/ZIP CRC/내용 SHA 확인, 실제 복원은 미실행. 복구는 먼저 격리 DB/별도 미디어 폴더에 복원해 대조하고 B5D 초안4개와 동시 수동 작업을 구분해야 한다. **현재 DB를 전체 백업으로 덮어쓰면 후속 수동 작업이 사라지므로 그렇게 복구하지 않는다.**
+- public39테이블 중 **34개 전체 해시 동일**: 요구조건·판정37/이력45·회사자료·검토 대기151·설정/키/프롬프트 등 보존. B5D가 추가한 데이터는 초안4개뿐. 기존 미디어10개/공고 원본4개/.env/백업/최종 다운로드 SHA 대조 통과. 원문·기업 값·키·토큰·DB 백업·출력물은 Git 제외 로컬에만 있다.
+- **동시 변경을 발견해 보존했다.** 백업 대비 나머지 변경은 accounts_user.last_login, outstanding token 신규3개(기존13개 불변), 품목ID1의 matched_product_id **null→1**/updated_at, 별도 작업2개와 초안 테이블이다. 품목 연결은 **00:42:10**에 바뀌었으며 B5D 서비스/다운로드는 연결을 변경하지 않았다. 로그인 기록 외 계정 필드/기존 토큰/다른 품목 필드는 동일. 변경을 되돌리거나 B5D의 제품 확정 작업으로 보고하지 않는다.
+- 별도 **Job ID1 EXTRACT_BID(00:35:37), ID2 EVALUATE_BID(00:42:15)**가 ID2 대상 PENDING/attempts0/started_at null로 존재한다. B5D는 이를 생성·실행·취소하지 않았다. **다음 단계에서 run_jobs 전체 실행 전 이 대기 작업의 의도를 먼저 확인해야 한다.** 새 LLM 로그0(기존 총2개), 판정/이력 해시 불변. 이번 출력은 새 수동 연결 후 재판정한 결과가 아니라 **기존 B5C 판정과 후보 trace의 저장 스냅샷**이며, 수동 연결만으로 기존 후보 판정을 확정 충족으로 바꾸지 않았다.
+- 마지막 실제 상태 API200·ID1/2 첨부 각4·관리대장151(PENDING151)·비교37행·저장 초안4종 GET200. 이 GET 전후39테이블 동일, 유료 호출/작업 생성 없음. 근거 `http-final.json`, `preservation-verification.json`, `concurrent-changes-audit-verified.json`, `download-manifest-final.json` (각 파일 크기/SHA/API/버전).
+- 소스/네이티브 환경·최종 출력 형식 반영을 위해 Django만 총2회 재기동, 기존 cwd/.venv/.env/localhost:8000/--noreload 유지. 최종 launcher **10316**, listener **408**. PostgreSQL **26452/5432**, 프런트 **20648/5173**는 재시작하지 않고 유지. 서버 로그/시작 환경은 `.venv/b5d/server-final-*`에 있다. 상시 워커 없음.
+
+## 다음 시작점
+
+- 실무자는 로컬 출력물/저장 v1을 검토할 수 있다. 후보별 기재값 비교·미확정 조건·내부 질문과 발주처 질문은 구분돼 있으며 질문 발송은 하지 않았다. 기존 회사자료로 확인되는 항목은 활용하고 성적서 미확보를 전체 검토 중단 조건으로 삼지 않는다.
+- 회사자료 개정/오래된 결과 자동 표시 기능은 **여전히 미구현**. 현재 입력 SHA/기준일은 실행 기록이며, 후속 회사자료/제품 선택 변경이 초안·판정을 자동 갱신하지 않는다. 특히 위 수동 제품 연결과 저장 B5C 판정의 시점 차이를 확인한 뒤 별도 승인된 후속 단계에서 수동 수정 보존·비교 갱신을 검증한다. B5D에서 재추출·재판정·초안 유료 다듬기·배포로 확장하지 않는다.
+
+---
+
 # 백엔드 인수인계 — Backend B5C
 
 - 상태: **B5C 완료, 여기서 중단** (2026-10-25, Asia/Seoul). 공고 ID2를 재추출하지 않고 실제 카탈로그 후보 자료 등록·회사 비교/판정 한 차례·저장/조회·원문/결과 대조 완료. 초안 생성/다운로드·전체 회사자료 적재·151행 정식 전환·제품/시험 시료 추정 연결·직원 최종 입찰 결정은 실행하지 않음.

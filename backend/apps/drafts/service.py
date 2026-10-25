@@ -15,10 +15,16 @@ def draft_title(bid, doc_type: str) -> str:
 
 
 @transaction.atomic
-def generate_draft(bid, doc_type: str, *, new_version: bool = False, user=None, job=None):
+def generate_draft(
+    bid, doc_type: str, *, new_version: bool = False, user=None, job=None, allow_llm: bool = True
+):
     """Create a draft. Overwrites the latest version unless asked for a new one; a version
     the user has edited is never overwritten (a new version is created instead)."""
-    content, used_llm = GENERATORS[doc_type](bid, user=user, job=job)
+    content, used_llm = GENERATORS[doc_type](bid, user=user, job=job, allow_llm=allow_llm)
+    from .generators import analysis_snapshot, output_notice
+
+    content["analysis_context"] = analysis_snapshot(bid)
+    content["notice"] = output_notice(bid)
     latest = DraftDocument.latest(bid, doc_type)
     if latest is None or new_version or latest.is_modified:
         return DraftDocument.objects.create(
@@ -49,6 +55,21 @@ def build_content(bid, doc_type: str, user=None) -> dict:
         return latest.content
     content, _ = GENERATORS[doc_type](bid, user=user, allow_llm=False)
     return content
+
+
+def report_contents(bid, user=None) -> tuple[dict, dict]:
+    """Read all selected saved versions in one query; missing types remain unsaved rules."""
+    latest = {}
+    for draft in DraftDocument.objects.filter(bid=bid).order_by("doc_type", "-version"):
+        latest.setdefault(draft.doc_type, draft)
+    contents, versions = {}, {}
+    for kind in DraftType.values:
+        draft = latest.get(kind)
+        contents[kind] = (
+            draft.content if draft else GENERATORS[kind](bid, user=user, allow_llm=False)[0]
+        )
+        versions[kind] = draft.version if draft else None
+    return contents, versions
 
 
 def _require(condition: bool, message: str):

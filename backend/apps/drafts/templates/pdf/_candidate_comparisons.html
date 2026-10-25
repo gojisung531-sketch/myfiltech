@@ -1,0 +1,14 @@
+{% for r in matrix_rows %}{% if r.candidate_comparisons %}
+<div class="candidate-block">
+<h2>대응표 No {{ r.no }} · 후보별 기재값 비교</h2>
+<p class="small">최종 공고 판정과 별개입니다. 후보 일치는 제안 제품의 확정 충족이나 검증된 시험 결과가 아닙니다.</p>
+<table>
+  <thead><tr><th style="width: 22%">제조사 모델</th><th style="width: 22%">후보 비교</th><th>기재값 비교 이유 · 범위</th></tr></thead>
+  <tbody>{% for candidate in r.candidate_comparisons %}<tr>
+    <td>{{ candidate.model_no }}</td><td>{{ candidate.comparison_label }}</td>
+    <td>{{ candidate.rationale }}<p class="small">{{ candidate.scope_notice }}</p></td>
+  </tr>{% endfor %}</tbody>
+</table>
+<p class="small">출처: {{ r.evidence }}</p>
+</div>
+{% endif %}{% endfor %}
