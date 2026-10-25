@@ -158,10 +158,17 @@ async function doDelete(bid) {
                 <span v-else class="text-muted">-</span>
               </td>
               <td>
-                <span
-                  :class="['badge', `bg-${PROCESSING_STATUS_VARIANT[bid.processing_status]}`]"
-                  >{{ bid.processing_status_label }}</span
+                <router-link
+                  :to="`/bids/${bid.id}`"
+                  class="status-link"
+                  :title="`${bid.title} — 담당자용 상세 화면 열기`"
+                  :aria-label="`${bid.title}: ${bid.processing_status_label}, 담당자용 상세 화면 열기`"
                 >
+                  <span
+                    :class="['badge', `bg-${PROCESSING_STATUS_VARIANT[bid.processing_status]}`]"
+                    >{{ bid.processing_status_label }}</span
+                  >
+                </router-link>
               </td>
               <td class="small">{{ bid.outcome_label }}</td>
               <td class="small text-end">
@@ -197,3 +204,12 @@ async function doDelete(bid) {
     <BidDeleteModal :bid="removing" @confirm="doDelete" @cancel="removing = null" />
   </div>
 </template>
+
+<style scoped>
+.status-link {
+  text-decoration: none;
+}
+.status-link:hover .badge {
+  text-decoration: underline;
+}
+</style>

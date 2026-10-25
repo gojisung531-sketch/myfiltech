@@ -5,6 +5,10 @@
 - 작업폴더: `filtech-ui` / 브랜치 `feature/ui-refresh` / 담당: frontend/**, 이 파일.
 - 시연 순서: 공고 2 → ① 핵심 요구사항의 출처 버튼(공백 차이·불일치·PDF 페이지) → ③ 판정의 제품 근거(다중 후보 선택) → ② 비교의 저장 판정 근거/현재 회사 참고 → 회사 정보·인증서의 근거 위치. 초안 저장·확정·재생성은 누르지 말 것.
 
+## 7E 이후 별도 변경: 공고 목록 이동 동선 (7E와 구분)
+- 공고 관리 목록의 처리 상태 배지('판정 완료' 등)를 `<router-link :to="/bids/{id}">`로 변경 — 편집 화면 '담당자 화면' 버튼과 같은 목적지. 키보드 포커스·Enter로 이동, 툴팁·aria-label 제공. '편집' 버튼은 `/admin/bids/{id}/edit` 그대로. 로그인·권한 변경 없음.
+- 실제 공고 2 확인: 링크 `/bids/2`, 이동 후 ①~⑤ 탭 표시, 편집 버튼은 `/admin/bids/2/edit`. 클릭 중 GET 외 요청 0건(추출·판정·Job 없음).
+
 ## 7E 변경 (frontend만; 자료 수정·판정·초안·LLM·워커 없음)
 - **전달**: 요구조건(`source_location`), 판정 근거(`evidences[].source_location`), 비교(`source_location`·`stored_evidence_locations`·`current_company_locations`·인증서 `evidence_locations`), 회사 정보·인증서 목록(`evidence_locations`)의 위치 객체를 그대로 원문 패널(`DocumentOffcanvas`→`DocumentViewer`)에 `location`으로 전달. 위치 객체가 있으면 저장된 숫자 페이지(initialPage)는 쓰지 않음.
 - **EXACT/WHITESPACE**: `/documents/{id}/text`의 `extracted_text`·`text_sha256`을 받아 위치의 `text_sha256` 일치, `start_utf16/end_utf16` 범위, 그 구간 글자 = `matched_text`를 모두 확인한 뒤에만 전체 추출 텍스트에서 `<mark>` 강조·스크롤(문서 보기 영역 안에서만). 하나라도 어긋나면 강조하지 않고 이유 + '문서 전체 보기'.
