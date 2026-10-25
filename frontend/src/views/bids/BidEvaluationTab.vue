@@ -471,25 +471,31 @@ function doReevaluate() {
               class="bi mt-1"
               :class="expanded.has(row.id) ? 'bi-chevron-down' : 'bi-chevron-right'"
             ></i>
-            <div class="verdict-col text-nowrap">
+            <div class="verdict-col">
               <VerdictBadge :verdict="row.evaluation?.verdict" />
-              <RiskDot :risk="row.evaluation?.risk_level" class="ms-1" />
+              <div v-if="row.evaluation?.risk_level" class="mt-1">
+                <RiskDot :risk="row.evaluation.risk_level" />
+              </div>
             </div>
-            <div class="flex-grow-1 small min-w-0">
-              <span class="text-muted"
-                >{{ row.category_label
-                }}<span v-if="row.item_label"> · {{ row.item_label }}</span></span
-              >
+            <div class="flex-grow-1 small min-w-0 row-main">
+              <div class="text-muted">
+                {{ row.category_label }}<span v-if="row.item_label"> · {{ row.item_label }}</span>
+              </div>
               <div class="text-break">
                 <span class="fw-semibold">{{ row.title }}</span>
                 <span v-if="row.is_mandatory" class="badge bg-danger ms-1">필수</span>
                 <span v-if="row.evaluation?.is_modified" class="badge bg-secondary ms-1"
                   >담당자 수정</span
                 >
-                <span class="text-muted ms-1">{{ row.requirement_text }}</span>
               </div>
-              <div v-if="row.evaluation?.auto_answer" class="text-body mt-1 text-break">
-                {{ row.evaluation.auto_answer }}
+              <ReadableText
+                v-if="row.requirement_text"
+                class="row-text"
+                :text="row.requirement_text"
+              />
+              <div v-if="row.evaluation?.rationale" class="row-reason">
+                <div class="row-label">판정 사유</div>
+                <ReadableText :text="row.evaluation.rationale" />
               </div>
             </div>
           </div>
@@ -934,6 +940,20 @@ function doReevaluate() {
 .verdict-col {
   width: 7.5rem;
   flex-shrink: 0;
+  margin-right: 0.75rem;
+}
+.row-text {
+  margin-top: 0.35rem;
+}
+.row-reason {
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--ft-border);
+}
+.row-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ft-muted);
 }
 .row-head {
   cursor: pointer;
@@ -954,10 +974,7 @@ function doReevaluate() {
 @media (max-width: 575.98px) {
   .verdict-col {
     width: 5.5rem;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.15rem;
+    margin-right: 0.5rem;
     white-space: normal;
   }
   .detail {
