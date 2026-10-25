@@ -156,6 +156,14 @@ class CertType(models.TextChoices):
     SME = "SME", "중소기업확인"
     KS = "KS", "KS"
     PATENT = "PATENT", "특허"
+    WOMEN_ENTERPRISE = "WOMEN_ENTERPRISE", "여성기업확인"
+    INNOBIZ = "INNOBIZ", "기술혁신형 중소기업"
+    POWER_DEVELOPMENT = "POWER_DEVELOPMENT", "발전사 개발선정품 등록"
+    MAINTENANCE = "MAINTENANCE", "정비적격기업"
+    SUPPLIER = "SUPPLIER", "기자재 공급 유자격 등록"
+    TECHNOLOGY_MARKET = "TECHNOLOGY_MARKET", "중소기업기술마켓"
+    ORIGIN_EXPORTER = "ORIGIN_EXPORTER", "품목별 원산지인증수출자"
+    KEPCO_PARTNER = "KEPCO_PARTNER", "한전 우수협력사"
     OTHER = "OTHER", "기타"
 
 
