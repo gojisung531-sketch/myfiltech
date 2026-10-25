@@ -1,6 +1,7 @@
 """② 회사 자료 비교 table (specs/05 §3 ②): requirement vs product spec / reports / certs / records."""
 
 from apps.company.models import Certificate, DeliveryRecord, TestReport
+from apps.core.freshness import FreshnessReader
 from apps.documents.locations import SourceLocator
 
 from .context import EvaluationContext
@@ -95,7 +96,8 @@ def _requirement_value(requirement) -> str:
 
 
 def comparison(bid) -> dict:
-    ctx = EvaluationContext.for_bid(bid)
+    ctx = EvaluationContext.for_bid(bid, read_only=True)
+    freshness = FreshnessReader()
     locator = SourceLocator()
     reports = {r.pk: r for r in TestReport.objects.all()}
     certs = {c.pk: c for c in Certificate.objects.all()}
@@ -131,7 +133,7 @@ def comparison(bid) -> dict:
     rows = []
     requirements = list(
         bid.requirements.select_related(
-            "item__matched_product", "evaluation", "source_attachment__document"
+            "item__matched_product", "evaluation__analysis_run", "source_attachment__document"
         )
     )
     doc_map = evidence_document_map(
@@ -220,9 +222,41 @@ def comparison(bid) -> dict:
                 "company_value": evaluation.company_value if evaluation else "",
             }
         )
+        row = rows[-1]
+        row["freshness"] = (
+            freshness.result(evaluation)
+            if evaluation
+            else {"status": "UNKNOWN", "reasons": [{"code": "NO_SAVED_EVALUATION"}]}
+        )
+        row["stored_result"] = {
+            key: row[key]
+            for key in (
+                "verdict",
+                "risk_level",
+                "company_value",
+                "rationale",
+                "stored_evidence_locations",
+            )
+        }
+        row["stored_result"]["freshness"] = row["freshness"]
+        row["current_reference"] = {
+            key: row[key]
+            for key in (
+                "product",
+                "product_spec",
+                "comparison_candidates",
+                "certificates",
+                "test_reports",
+                "delivery_records",
+                "current_company_locations",
+            )
+        }
+        row["temporal_alignment"] = "SEPARATE_CURRENT_REFERENCE_AND_STORED_RESULT"
     return {
         "reference_date": str(ctx.reference_date),
         "is_simulation": ctx.is_simulation,
         "items": items,
         "rows": rows,
+        "freshness": freshness.evaluations(bid.pk),
+        "legacy_flat_fields_mix_time_contexts": True,
     }

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.core.freshness import reader_for
 from apps.documents.locations import locator_for
 
 from .evidence import evidence_document_map, stored_evidence_locations
@@ -15,6 +16,11 @@ class EvidenceSerializer(serializers.Serializer):
 
 
 class EvaluationSerializer(serializers.ModelSerializer):
+    freshness = serializers.SerializerMethodField()
+
+    def get_freshness(self, obj):
+        return reader_for(self.context).result(obj)
+
     verdict_label = serializers.CharField(source="get_verdict_display", read_only=True)
     risk_level_label = serializers.CharField(source="get_risk_level_display", read_only=True)
     decided_by_label = serializers.CharField(source="get_decided_by_display", read_only=True)
@@ -52,6 +58,7 @@ class EvaluationSerializer(serializers.ModelSerializer):
             "modified_by_name",
             "modified_at",
             "updated_at",
+            "freshness",
         ]
         read_only_fields = [
             "id",

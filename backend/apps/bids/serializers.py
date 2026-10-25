@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.company.models import Product
+from apps.core.freshness import reader_for
 from apps.documents.locations import locator_for
 from apps.evaluation.context import reference_date
 from apps.evaluation.models import RequirementEvaluation
@@ -315,5 +316,6 @@ class RequirementWithEvaluationSerializer(BidRequirementSerializer):
             context={
                 "doc_map": self.context.get("doc_map"),
                 "source_locator": locator_for(self.context),
+                "freshness_reader": reader_for(self.context),
             },
         ).data

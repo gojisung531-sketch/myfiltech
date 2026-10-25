@@ -51,6 +51,13 @@ class RequirementEvaluation(TimeStampedModel):
     llm_call = models.ForeignKey(
         "llm.LLMCallLog", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
+    analysis_run = models.ForeignKey(
+        "core.AnalysisRun",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="evaluations",
+    )
 
     class Meta:
         ordering = ["requirement__order", "requirement_id"]
@@ -68,6 +75,7 @@ class RequirementEvaluation(TimeStampedModel):
         "clarification_question",
         "evidences",
         "decided_by",
+        "analysis_run_id",
     ]
 
     def snapshot(self) -> dict:

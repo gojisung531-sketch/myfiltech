@@ -1,3 +1,38 @@
+# 백엔드 인수인계 — Backend B6C
+
+- 상태: **B6C 완료, 여기서 중단** (2026-10-26, Asia/Seoul). 새 실행의 입력 보존·판정/초안별 **CURRENT / STALE / UNKNOWN**과 읽기 전용 최신성 API 구현. **실제 기존 판정37개·초안4종은 모두 UNKNOWN(확인 불가)**, analysis_run_id=null. 현재 입력을 과거 실행으로 소급 지정한 건수/실행 행 **0**. 재추출·재판정·초안 재생성·LLM·워커 실행0, **Claude 예산 사용0달러**.
+- 검사: **57 passed**(B6C 격리41 + B6B 위치14 + 기존 조회/초안 보존2), 외부 Python socket 시도0. 자료 추가/수정/삭제·제품 선택·요구조건·정책/기준일 변경·입력 미상·실행/저장 중 변경·수동 편집/복원·원자적 실패·GET 무부작용 검증. **최종 실제 읽기32건 모두200**, 기존 API11종의 모든 기존 중첩 값 일치. 실제 DB의 판정/초안을 수정해 시험하지 않았다.
+- 보존: 기존 판정37/이력45/초안4·회사/인증21·제품2/수동 선택·관리대장151(PENDING151) 원행 보존. **Job1·2=PENDING / attempts0 / started_at null**, 새 Job/LLM 로그0. 기존39테이블 중34개 전체 해시 동일; 판정/초안2개는 새 nullable FK만 추가했고 **기존 모든 열/시각/JSON 동일**. 나머지3개는 migration3행·content type1행·해당 모델 기본 permission4행 추가뿐이며 기존 행은 동일. 현재40테이블, core_analysisrun0. 최종 GET32건 전후40테이블 동일, 미디어27개·기업 원본18개·.env SHA 동일.
+- 기준: 깨끗한 **`c5183dd`**, `feature/backend-foundation`. 완료 커밋은 **이 기록을 포함한 HEAD** — `feat(backend): track analysis and draft input freshness`. 수정은 backend/**와 이 파일뿐. 프런트·기업 원본·팀 노션·키/배포 설정·다른 worktree·push 변경 없음.
+
+## 입력 보존과 실행 경계
+
+- `core.AnalysisRun`에 **새 실행부터** 전체 입력 JSON/SHA·옵션·시작/완료 시각·실행 전 결과 지문·완료 출력 스냅샷을 저장한다. 입력/완료 기록은 모델 저장에서 불변. 정식 회사 행과 M2M, 관련 원본/기존 추출 텍스트·표/메타데이터·정의, 실제 업로드 바이트 SHA/가용성, 공고/요구조건/품목·사용자 선택·후보, 기준일/유효 정책·모델/프롬프트·명시한 코드 SHA를 포함한다. provider 키/암호문/접속 URL·.env는 입력 조회/복호화/스냅샷 대상에서 제외.
+- 초안은 **별도의 실행 입력**에 저장 판정/수동 수정/근거/판정 실행 연결 및 생성에 참조하는 fit/extra도 포함한다. 새 초안이 과거 입력 미상 판정을 읽었다고 해서 그 판정이나 초안을 CURRENT로 올리지 않는다. 기존 B5C/B5D 부분 해시는 전체 입력 재현 근거로 채택하지 않았다.
+- 새 명시 실행은 시작 시 짧은 잠금 트랜잭션에서 입력/기존 결과를 보존 → 계산은 잠금 밖 → 최종 잠금하에 입력/수동 결과 재확인 → 모든 결과·이력·연결 저장 → 입력 재확인 후 완료한다. 도중 변경이나 저장 실패는 **결과 묶음 전체 롤백**, 이전 결과/이력 보존, 실패 실행만 FAILED. PostgreSQL은 추가/삭제도 방지하는 테이블 잠금을 짧은 경계에서 사용한다. 외부 장기 트랜잭션으로 감싸는 호출/파일시스템 완전 원자성의 한계는 계약 문서에 명시했다.
+- 기본 keep_modified=True는 수동 판정과 그 과거 실행 연결을 보존한다. 실행 중 수동 수정도 감지해 새 저장을 거부한다. 수동 제품을 자동 후보로 교체하지 않는다. 초안의 내용·제목·확정 상태를 수동 작업으로 보존하고 명시 재생성은 새 버전으로 만든다. 자동 판정 복원도 **원래 입력 연결**을 복원하며 옛 이력에 연결이 없으면 UNKNOWN. 변경자 null인 수동 이력을 자동 기록으로 오인하지 않도록 보완했다. 실제 기존 이력은 수정하지 않았다.
+
+## API·프런트 연계
+
+- **GET `/api/bids/{id}/freshness`**: 판정 요약/행별 상태·누락 판정 수, 모든 저장 초안 버전별 상태, 현재 관찰 입력 해시/시각. 이 현재 해시는 과거 실행 입력이 아니다. 기존 판정/요구조건 include=evaluation·초안 목록/상세/버전에 **freshness** 추가. 기존 필드/권한/내용을 유지한다.
+- freshness는 status/label, 변경 component·이유·추가/삭제/수정 ID, analysis_run_id·사용/현재 입력 SHA, 분석 시작/완료·저장/수정 시각, 수동 여부·검토 필요·**automatic_refresh=false**를 제공한다. 과거 입력을 모르면 analysis_at=null이며 기존 updated_at을 분석 시각으로 대체하지 않는다. CURRENT는 입력 일치이며 요건 충족/정확성/직원 승인과 다르다. 수동 수정은 별도 검토 필요 표시를 유지한다.
+- 비교표의 **stored_result**와 **current_reference**를 분리하고 `temporal_alignment=SEPARATE_CURRENT_REFERENCE_AND_STORED_RESULT`, `legacy_flat_fields_mix_time_contexts=true`를 제공한다. 기존 평면 필드는 호환용이며 현재 회사 값과 과거 판정을 같은 시점의 비교로 표시하면 안 된다. 기존 B6B의 원본 위치/과거 근거와 현재 참고 구분도 유지했다.
+- 프런트 계약·상태/예시·추적 범위·복구/한계: **`backend/docs/analysis-freshness-b6c.md`**. 기존 **company-data-revision-plan.md** 상단에 B6C 구현 범위와 후속 설계를 구분했다. 프런트 배지/화면·내보낸 PDF/XLSX의 최신성 고지는 구현하지 않았고 출력물/초안을 재생성하지 않았다.
+
+## 실제 확인·복구 수단·환경
+
+- 변경 전 일관된 **`.venv/b6c/before-b6c.dump` 744516bytes**, SHA256 **`26a64631bfb7ad3c551026eaa62741899fe504095a565ffe0fa16c29c935eb26`**. 미디어 ZIP SHA256 **`caa5178b29c4646ec33ae4cd2a321198fa9eba879ce44f829746a23971586dc4`**. dump TOC·ZIP CRC/내용 SHA 확인, 기존27파일/.env/기업 원본18개 재대조. 실제 복원은 미실행. **현재 DB를 전체 dump로 덮어쓰지 말고 먼저 격리 복원/후속 수동 변경 대조**. 이후 새 실행이 생기면 down migration 전에 스냅샷/연결을 별도 보존해야 한다.
+- 실제 적용은 **core.0003_analysisrun / evaluation.0002_requirementevaluation_analysis_run / drafts.0002_draftdocument_analysis_run** 3개뿐. 백필/분석 실행 없음. 기존 null 연결37+4를 재조회했으며 HTTP 후에도 실행 행0이다. 초기화·seed·기존 row 갱신 명령 없이 migration만 적용했다. Django의 새 모델 기본 permission/content type 추가는 기존 권한 배정/키 변경이 아니다.
+- 비공개 근거 **`backend/.venv/b6c/`**: `backup-verification.json`, `rows-before-private.json`, `db-before.json`, `media-before.json`, `schema-meta-before.json`, `legacy-http-before-private.json`, **`preservation-verification.json`, `db-after-final.json`, `http-verification.json`, `http-responses-private.json`**, `checks.json`. 기업 값·실제 응답·백업/키는 Git에 넣지 않았다. migration 시각은 UTC/서울 표현을 같은 시각으로 정규화해 대조했다.
+- 모델/서비스 반영에 **Django만1회 재기동**, 같은 cwd/.venv/.env/localhost:8000/--noreload·기존 PDF 런타임 환경 유지. 최종 launcher **16676**, listener **20244**; PostgreSQL **26452/5432**·프런트 유지. 상시 워커 없음. Django check 문제0·추가 migration 누락0·변경 Python ruff check/format·git diff --check 통과. 브라우저 상태 배지/다중 프로세스 잠금 부하/실제 복원 검증은 미실행.
+
+## 추적 한계와 다음 시작점
+
+- 보수적 회사 전체 의존 비교이며 변경 이벤트별 작성자/사유·승인 개정 번호 대장, 원본 옛 바이트 자동 아카이브/복원, 매칭/적합도 출력 자체의 최신성, 부분 영향/재분석은 미구현. 입력/결과 시각까지 원상복구한 중간 ABA 사건 전체 이력, 명시한 코드 외 모든 패키지/OS/외부 공급자 변화도 추적하지 않는다. snapshot은 원문/정식 입력 보존이며 LLM 출력 동일 재현이나 외부 인증 효력 보장이 아니다.
+- 이번 실 DB는 **UNKNOWN37/UNKNOWN4가 의도된 정직한 결과**다. 후속 명시 분석부터 알려진 입력을 보존하며, 그때도 Job1·2의 실행 의도를 먼저 확인해야 한다. 조회/새로고침으로 유료 작업을 시작하지 않는다. **후속 분석 검증용 총10달러 Claude 예산은 이번에 사용하지 않았으며 별도 단계에서만 다룬다. B6C만 커밋 후 중단**.
+
+---
+
 # 백엔드 인수인계 — Backend B6B
 
 - 상태: **B6B 완료, 여기서 중단** (2026-10-26, Asia/Seoul). 위치 연결 API만 추가. **공고2 요구조건37개: 저장 HWP 텍스트의 단일 위치35(동일32·공백 차이3), 인용 불일치1(req14), 스캔 PDF 물리쪽만 확인1(req6)**. 인용/페이지를 추정하거나 저장 인용을 수정하지 않았다. HWP의 실제 쪽/원본 문단은 미확인이다.

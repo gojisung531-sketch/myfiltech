@@ -53,7 +53,9 @@ class EvaluationContext:
         return [r for r in self.test_reports if r.product_id == getattr(product, "pk", None)]
 
     @classmethod
-    def for_bid(cls, bid, mode: str | None = None) -> "EvaluationContext":
+    def for_bid(
+        cls, bid, mode: str | None = None, *, read_only: bool = False
+    ) -> "EvaluationContext":
         from apps.bids.models import BidProductMatch
 
         ref, simulation = reference_date(bid, mode)
@@ -63,7 +65,9 @@ class EvaluationContext:
         return cls(
             reference_date=ref,
             is_simulation=simulation,
-            company=Company.load(),
+            company=(Company.objects.filter(pk=1).first() or Company(pk=1))
+            if read_only
+            else Company.load(),
             certificates=list(Certificate.objects.all()),
             delivery_records=list(DeliveryRecord.objects.prefetch_related("products")),
             products=list(Product.objects.filter(is_active=True)),

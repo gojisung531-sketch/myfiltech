@@ -2,10 +2,10 @@
 
 import logging
 
-from django.db import transaction
 from django.utils import timezone
 
 from apps.core.app_settings import get_setting
+from apps.core.freshness import InputsChanged, begin_run, fail_run, finish_run, output_snapshot
 from apps.llm.providers import LLMError
 from apps.llm.services import LLMNotConfigured, is_llm_configured, run_task
 
@@ -272,7 +272,9 @@ def validate_judgment_sources(out: dict, ctx, requirement=None) -> dict:
     return result
 
 
-def save_evaluation(requirement, data: dict, call_log=None) -> RequirementEvaluation:
+def save_evaluation(
+    requirement, data: dict, call_log=None, analysis_run=None
+) -> RequirementEvaluation:
     evaluation = getattr(requirement, "evaluation", None) or RequirementEvaluation(
         requirement=requirement
     )
@@ -284,6 +286,7 @@ def save_evaluation(requirement, data: dict, call_log=None) -> RequirementEvalua
     evaluation.modified_by = None
     evaluation.modified_at = None
     evaluation.llm_call = call_log
+    evaluation.analysis_run = analysis_run
     evaluation.save()
     EvaluationHistory.objects.create(evaluation=evaluation, snapshot=evaluation.snapshot())
     return evaluation
@@ -320,7 +323,19 @@ def evaluate_bid(
     bid.processing_status = status.EVALUATING
     bid.processing_error = ""
     bid.save(update_fields=["processing_status", "processing_error", "updated_at"])
+    run = None
     try:
+        run = begin_run(
+            bid.pk,
+            "EVALUATION",
+            {
+                "keep_modified": keep_modified,
+                "requirement_ids": requirement_ids,
+                "rules_first": rules_first,
+                "source_scoped": source_scoped,
+            },
+        )
+        bid.refresh_from_db()  # match the captured input rather than a caller's stale object
         ctx = EvaluationContext.for_bid(bid)
         if source_scoped and (ctx.test_reports or ctx.certificates or ctx.delivery_records):
             raise ValueError(
@@ -351,6 +366,7 @@ def evaluate_bid(
         counts = {"rule": 0, "llm": 0}
         judge_batches = 0
         done = 0
+        prepared = []
         for start in range(0, len(pending), size):
             batch = pending[start : start + size]
             outs, call_log = ({}, None)
@@ -359,18 +375,25 @@ def evaluate_bid(
                 report(10 + int(80 * done / max(1, len(pending))), "LLM 판정 중")
                 outs, call_log = _judge(bid, judge_batch, ctx, job)
                 judge_batches += 1
-            with transaction.atomic():
-                for requirement, result in batch:
-                    out = outs.get(requirement.pk)
-                    if out and source_scoped:
-                        out = validate_judgment_sources(out, ctx, requirement)
-                    save_evaluation(
-                        requirement, merge(requirement, result, out), call_log if out else None
-                    )
-                    counts["rule" if result else "llm"] += 1
+            for requirement, result in batch:
+                out = outs.get(requirement.pk)
+                if out and source_scoped:
+                    out = validate_judgment_sources(out, ctx, requirement)
+                prepared.append(
+                    (requirement, merge(requirement, result, out), call_log if out else None)
+                )
+                counts["rule" if result else "llm"] += 1
             done += len(batch)
-        summary = refresh_counts(bid)
+        with finish_run(run):
+            for requirement, data, call_log in prepared:
+                saved = save_evaluation(requirement, data, call_log, analysis_run=run)
+                run.outputs[str(saved.pk)] = output_snapshot(saved)
+            summary = refresh_counts(bid)
     except Exception as exc:
+        if run:
+            fail_run(
+                run, "INPUTS_CHANGED" if isinstance(exc, InputsChanged) else "EXECUTION_FAILED"
+            )
         bid.processing_status = status.FAILED
         bid.processing_error = f"판정 실패: {exc}"[:2000]
         bid.save(update_fields=["processing_status", "processing_error", "updated_at"])
@@ -408,9 +431,14 @@ def update_evaluation(evaluation: RequirementEvaluation, data: dict, user) -> Re
 
 def revert_evaluation(evaluation: RequirementEvaluation, user) -> RequirementEvaluation:
     """Restore the last automatic snapshot (specs/08 §8)."""
-    last_ai = evaluation.history.filter(changed_by__isnull=True).first()
+    last_ai = (
+        evaluation.history.filter(changed_by__isnull=True)
+        .exclude(snapshot__decided_by=RequirementEvaluation.DecidedBy.MANUAL)
+        .first()
+    )
     if last_ai is None:
         raise ValueError("되돌릴 자동 판정 기록이 없습니다.")
+    evaluation.analysis_run_id = last_ai.snapshot.get("analysis_run_id")
     for name, value in last_ai.snapshot.items():
         setattr(evaluation, name, value)
     evaluation.is_modified = False

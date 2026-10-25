@@ -8,6 +8,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.freshness import FreshnessReader
 from apps.core.jobs import enqueue
 from apps.core.permissions import IsAdminRole, IsBidManagerOrAdmin, ReadAnyWriteAdmin
 from apps.core.serializers import JobSerializer
@@ -255,6 +256,10 @@ class BidViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], permission_classes=[IsBidManagerOrAdmin])
     def comparison(self, request, pk=None):
         return Response(comparison(self.get_object()))
+
+    @action(detail=True, methods=["get"], permission_classes=[IsBidManagerOrAdmin])
+    def freshness(self, request, pk=None):
+        return Response(FreshnessReader().summary(self.get_object().pk))
 
 
 class DashboardSummaryView(APIView):
