@@ -49,7 +49,7 @@ def _cert_evidence(cert) -> dict:
 def code_matches(cert_code: str, required: str) -> bool:
     """Hierarchical item codes: '40161505' matches '4016150501'; 'x' is a wildcard digit."""
     cert_code, required = str(cert_code).lower().strip(), str(required).strip()
-    if not cert_code or not required:
+    if not cert_code or not required or len(cert_code) > len(required):
         return False
     return all(c == "x" or c == r for c, r in zip(cert_code, required, strict=False))
 

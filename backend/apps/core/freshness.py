@@ -45,6 +45,7 @@ ENGINE_FILES = [
     "apps/evaluation/rules.py",
     "apps/evaluation/grades.py",
     "apps/evaluation/evidence.py",
+    "apps/evaluation/formal_sources.py",
     "apps/evaluation/service.py",
     "apps/drafts/generators.py",
     "apps/drafts/service.py",

@@ -27,6 +27,10 @@ def target_product(requirement, ctx: EvaluationContext):
         return item.matched_product
     if requirement.category not in PRODUCT_CATEGORIES:
         return None
+    if requirement.bid_id and requirement.bid.items.filter(matched_product__isnull=True).exists():
+        return (
+            None  # A single selected item does not cover a shared condition for unselected items.
+        )
     matched = {p.pk: p for p in ctx.matched_products}
     return next(iter(matched.values())) if len(matched) == 1 else None
 

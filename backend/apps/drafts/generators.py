@@ -143,8 +143,15 @@ def output_notice(bid) -> str:
     configured = get_setting("report.disclaimer") or ""
     if (bid.extra or {}).get("b5c_run"):
         configured = configured.replace("가상 자료 기반", "실제 등록 자료 기반")
+    context = analysis_snapshot(bid)
+    simulation = (
+        f" · 과거 공고에 현재 정식 자료를 적용한 시뮬레이션(판정 기준일 {context['saved_evaluation_date']})"
+        if context.get("is_simulation")
+        else ""
+    )
     return (
         f"{configured} · 미확정 후보·조건 포함 · 직원 검토용이며 최종 입찰 결정/제출본이 아닙니다."
+        + simulation
     )
 
 
@@ -173,10 +180,19 @@ def candidate_details(evaluation) -> list[dict]:
 
 
 def analysis_snapshot(bid) -> dict:
+    from apps.core.freshness import FreshnessReader
+
     rows = []
+    runs = {}
+    unknown = False
     for requirement in _requirements(bid):
         evaluation = _evaluation(requirement)
         if evaluation:
+            if evaluation.analysis_run_id:
+                run = evaluation.analysis_run
+                runs[run.pk] = run
+            else:
+                unknown = True
             rows.append(
                 {
                     "requirement_id": requirement.pk,
@@ -185,17 +201,26 @@ def analysis_snapshot(bid) -> dict:
                     "trace": evaluation.rule_trace,
                 }
             )
-    run = (bid.extra or {}).get("b5c_run") or {}
+    references = [run.inputs.get("components", {}).get("reference", {}) for run in runs.values()]
+    dates = {r.get("date") for r in references}
+    saved_date = next(iter(dates)) if len(dates) == 1 and not unknown else "미기록/혼합"
+    freshness = FreshnessReader().evaluations(bid.pk)
     return {
-        "saved_evaluation_date": run.get("reference_date", "미기록"),
-        "is_simulation": run.get("is_simulation"),
+        "saved_evaluation_date": saved_date,
+        "is_simulation": all(r.get("is_simulation") for r in references)
+        if references and not unknown
+        else None,
+        "evaluation_run_ids": sorted(runs),
+        "evaluation_freshness": {
+            k: freshness[k] for k in ("status", "counts", "missing_evaluations")
+        },
         "counts": verdict_counts(bid),
         "input_sha256": hashlib.sha256(
             json.dumps(rows, ensure_ascii=False, sort_keys=True, default=str).encode()
         ).hexdigest(),
         "generation_mode": "STORED_RESULTS_NO_REEVALUATION",
-        "candidate_links_confirmed": run.get("confirmed_item_product_links"),
-        "source_revision_tracking": "미구현",
+        "candidate_links_confirmed": bid.items.filter(matched_product__isnull=False).count(),
+        "source_revision_tracking": "B6C_INPUT_SNAPSHOTS",
     }
 
 

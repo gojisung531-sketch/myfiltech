@@ -1,5 +1,6 @@
 """EVALUATE_BID: rules → LLM (assist) → save, keeping manual edits (specs/08 §7–8)."""
 
+import json
 import logging
 
 from django.utils import timezone
@@ -12,6 +13,7 @@ from apps.llm.services import LLMNotConfigured, is_llm_configured, run_task
 from . import rules
 from .context import EvaluationContext
 from .evidence import company_evidence, product_evidence
+from .formal_sources import catalog, rule_with_formal_sources, validate_judgment
 from .models import RISK_ORDER, EvaluationHistory, RequirementEvaluation, Verdict
 
 logger = logging.getLogger(__name__)
@@ -110,13 +112,36 @@ def _requirement_payload(requirement, result, ctx) -> dict:
     }
 
 
-def _judge(bid, batch: list[tuple], ctx, job) -> tuple[dict[int, dict], object]:
+def _judge(
+    bid, batch: list[tuple], ctx, job, *, formal_sources=False
+) -> tuple[dict[int, dict], object]:
     """Run evaluation.judge for one batch. Returns ({requirement_id: result}, call_log)."""
     variables = {
         "bid_context": bid_context(bid, ctx),
         "requirements": [_requirement_payload(req, rr, ctx) for req, rr in batch],
         "verdict_definitions": get_setting("evaluation.verdict_definitions"),
     }
+    if formal_sources:
+        from apps.llm.models import PromptTemplate
+        from apps.llm.prompts import render
+
+        shared = {**company_evidence(batch[0][0], ctx), **catalog(ctx)}
+        for row in variables["requirements"]:
+            row["company_evidence"] = {
+                "shared_source": "bid_context.CURRENT_FORMAL_COMPANY_DATA",
+                "comparison_candidates": row["company_evidence"].get("comparison_candidates", []),
+            }
+        variables["bid_context"] += (
+            "\nCURRENT_FORMAL_COMPANY_DATA\n"
+            + json.dumps(shared, ensure_ascii=False, default=str)
+            + "\n없는 자료/쪽/인용을 만들지 말 것. 증서 보유만으로 복합 자격·이행 완료를 판정하지 말 것."
+        )
+        template = PromptTemplate.active("evaluation.judge")
+        limit = get_setting("llm.max_input_chars")
+        if limit and len(render(template.user_prompt_template, variables)) > limit:
+            raise ValueError(
+                "정식 자료 입력이 프롬프트 한도를 초과합니다. 잘라서 판정하지 않습니다."
+            )
     try:
         result = run_task("evaluation.judge", variables, job=job)
     except (LLMError, LLMNotConfigured) as exc:  # includes LLMInvalidOutput
@@ -144,6 +169,11 @@ def _llm_evidences(out: dict) -> list[dict]:
                     "label": ref["label"],
                     "page": ref.get("page") or 0,
                     "quote": ref.get("quote") or "",
+                    **{
+                        k: ref[k]
+                        for k in ("document_id", "source_sha256", "quote_verification")
+                        if k in ref
+                    },
                 }
             )
     return refs
@@ -318,7 +348,10 @@ def evaluate_bid(
     report=_noop,
     rules_first: bool = False,
     source_scoped: bool = False,
+    formal_sources: bool = False,
 ) -> dict:
+    if source_scoped and formal_sources:
+        raise ValueError("카탈로그 전용과 정식 회사자료 실행은 동시에 지정할 수 없습니다.")
     status = bid.ProcessingStatus
     bid.processing_status = status.EVALUATING
     bid.processing_error = ""
@@ -333,10 +366,22 @@ def evaluate_bid(
                 "requirement_ids": requirement_ids,
                 "rules_first": rules_first,
                 "source_scoped": source_scoped,
+                "formal_sources": formal_sources,
             },
         )
         bid.refresh_from_db()  # match the captured input rather than a caller's stale object
         ctx = EvaluationContext.for_bid(bid)
+        if formal_sources:
+            current = catalog(ctx)
+            anchors = current["company_sources"] + [
+                source for cert in current["certificates"] for source in cert["sources"]
+            ]
+            if any(
+                source["source_verification"] != "VERIFIED"
+                or source["record_value_consistency"] != "MATCHES_REVIEW"
+                for source in anchors
+            ) or any(not cert["sources"] for cert in current["certificates"]):
+                raise ValueError("정식 자료의 원본/수동 검토 메타데이터 대조에 실패했습니다.")
         if source_scoped and (ctx.test_reports or ctx.certificates or ctx.delivery_records):
             raise ValueError(
                 "카탈로그 후보 전용 실행에 다른 정식 자료가 있습니다. 근거 범위를 다시 검토하세요."
@@ -354,6 +399,8 @@ def evaluate_bid(
                 continue
             try:
                 result = rules.evaluate(requirement, ctx)
+                if formal_sources:
+                    result = rule_with_formal_sources(requirement, result, ctx)
             except Exception:  # a broken rule must not stop the whole bid
                 logger.exception("rule failed for requirement %s", requirement.pk)
                 result = None
@@ -373,12 +420,17 @@ def evaluate_bid(
             judge_batch = [(req, rr) for req, rr in batch if rr is None] if rules_first else batch
             if use_llm and judge_batch:
                 report(10 + int(80 * done / max(1, len(pending))), "LLM 판정 중")
-                outs, call_log = _judge(bid, judge_batch, ctx, job)
+                if formal_sources:
+                    outs, call_log = _judge(bid, judge_batch, ctx, job, formal_sources=True)
+                else:
+                    outs, call_log = _judge(bid, judge_batch, ctx, job)
                 judge_batches += 1
             for requirement, result in batch:
                 out = outs.get(requirement.pk)
                 if out and source_scoped:
                     out = validate_judgment_sources(out, ctx, requirement)
+                if out and formal_sources:
+                    out = validate_judgment(out, ctx, requirement)
                 prepared.append(
                     (requirement, merge(requirement, result, out), call_log if out else None)
                 )
