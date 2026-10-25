@@ -313,3 +313,8 @@ details.ft-help > :not(summary) {
   margin-top: 0.35rem;
   margin-bottom: 0;
 }
+
+/* 표 컨테이너 안의 절대 위치 요소(visually-hidden 등)가 컨테이너 밖으로 새어 페이지 가로 스크롤을 만들지 않게 한다 */
+.table-responsive {
+  position: relative;
+}

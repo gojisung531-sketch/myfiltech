@@ -22,7 +22,7 @@ const emit = defineEmits(['evaluate', 'changed'])
 const toast = useToastStore()
 const data = ref(null)
 const loadError = ref('')
-const viewer = ref(null) // { documentId, title, text }
+const viewer = ref(null) // { documentId, title, text, page, quote, kind, note }
 const suggest = ref(null) // item whose product changed → offer re-evaluation
 
 async function load() {
@@ -89,12 +89,82 @@ function open(target, kind, row) {
       documentId: target.document_id,
       title: `${row.title} — ${kind}`,
       text: target.label,
+      page: 0,
+      quote: '',
+      kind: 'reference',
+      note: '이 화면은 자료의 위치(페이지)를 받지 않아 문서의 처음부터 표시합니다.',
     }
   } else {
     toast.show(
       `이 ${kind}에는 연결된 원본 문서가 없습니다(문서 ID가 저장되지 않음). 자료 목록에서 직접 확인하세요.`,
       'warning',
     )
+  }
+}
+
+// ---- 후보별 카탈로그 비교 (서버 값만 표시, 프런트에서 계산하지 않음) ----
+// 서버 verdict 문자열을 후보 비교용 업무 용어로만 바꿔 보여 준다.
+const CANDIDATE_LABELS = {
+  MET: { text: '충족', cls: 'bg-success' },
+  NEEDS_SUPPLEMENT: { text: '미달', cls: 'bg-warning' },
+  NEEDS_CONFIRMATION: { text: '확인 필요', cls: 'bg-info' },
+}
+
+// 제품 ID로만 후보와 비교 결과를 연결한다(배열 순서·모델명 유사성 사용 안 함).
+function candidatePairs(row) {
+  const results = row.comparison_trace?.candidate_comparisons || []
+  return (row.comparison_candidates || []).map((candidate) => ({
+    candidate,
+    result: results.find((r) => r.product_id === candidate.product_id) || null,
+  }))
+}
+
+// 이 요구사항 카테고리에 대해 제조사가 기재한 값(있을 때만)
+function claimText(row, candidate) {
+  const claim = candidate.published_claims?.[row.category]
+  if (!claim?.display) return ''
+  return claim.scope ? `${claim.display} (${claim.scope})` : claim.display
+}
+
+// 카탈로그 기재 사양 요약: 서버가 준 자유 문장 필드만 이어 붙인다(코드값은 쓰지 않음).
+function specSummary(candidate) {
+  const s = candidate.specification || {}
+  return [s.dimension_text, s.media, s.frame_material, s.gasket].filter(Boolean).join(' · ')
+}
+
+function openCandidateSource(row, candidate) {
+  const source = candidate.source || {}
+  if (!candidate.source_document_id) {
+    toast.show('이 후보에는 연결된 제조사 원문 문서가 없습니다.', 'warning')
+    return
+  }
+  viewer.value = {
+    documentId: candidate.source_document_id,
+    title: `${row.title} — 후보 ${candidate.model_no}`,
+    text: source.label || candidate.model_no,
+    page: source.page || 0,
+    quote: source.quote || '',
+    kind: 'reference',
+    note: source.page
+      ? '카탈로그 기재 위치(서버 기록)입니다. 원문과 대조하세요.'
+      : '위치 미확인 — 문서의 처음부터 표시합니다.',
+  }
+}
+
+function openReviewSource(row) {
+  const review = row.interpretation_review || {}
+  if (!review.source_document_id) {
+    toast.show('이 해석 주의사항에는 연결된 원문 문서가 없습니다.', 'warning')
+    return
+  }
+  viewer.value = {
+    documentId: review.source_document_id,
+    title: row.title,
+    text: review.location || '공고 원문',
+    page: 0,
+    quote: review.source_quote || '',
+    kind: 'requirement_source',
+    note: '서버가 기록한 해석 주의사항의 원문입니다. 위치 미확인 — 직접 대조하세요.',
   }
 }
 
@@ -115,7 +185,8 @@ const hasRefs = (row) =>
         <div class="text-muted">
           판정 기준일 {{ data.reference_date
           }}<template v-if="data.is_simulation"> · 과거 공고를 오늘 기준으로 판정</template> ·
-          연결·참고 자료는 충족 근거가 아닙니다 · 단위·시험표준·시험조건 미제공(원문 확인 필요)
+          연결·참고 자료는 충족 근거가 아닙니다 · 후보별 카탈로그 비교는 참고이며 최종 판정에
+          반영되지 않습니다 · 단위·시험표준·시험조건 미제공(원문 확인 필요)
         </div>
         <details class="ft-help mt-1">
           <summary>이 화면 읽는 법</summary>
@@ -184,11 +255,11 @@ const hasRefs = (row) =>
                 <th>요구사항</th>
                 <th>요구 내용 (공고 원문 기준)</th>
                 <th title="제품 등록 정보(카탈로그) 기준 값이며 검증된 시험성적서 값이 아닙니다.">
-                  연결 제품 · 제품 사양(등록 정보)
+                  연결 제품 · 후보별 카탈로그 비교
                 </th>
                 <th>회사 값 (판정 시 서버 기록)</th>
                 <th>연결·참고 자료</th>
-                <th>서버 판정</th>
+                <th>최종 판정</th>
               </tr>
             </thead>
             <tbody>
@@ -206,10 +277,69 @@ const hasRefs = (row) =>
                     <div v-if="row.product_spec">{{ row.product_spec }}</div>
                     <div v-else class="text-muted">이 항목의 제품 사양 정보 미제공</div>
                   </template>
+                  <template v-else-if="row.comparison_candidates?.length">
+                    <div class="text-muted mb-1">
+                      연결 제품 없음 · 제안 제품·옵션 미확정 — 아래는 카탈로그 후보 비교(참고)
+                    </div>
+                    <div
+                      v-for="pair in candidatePairs(row)"
+                      :key="pair.candidate.product_id"
+                      class="cand mb-2"
+                    >
+                      <div class="d-flex flex-wrap align-items-center gap-1">
+                        <span class="fw-semibold">{{ pair.candidate.model_no }}</span>
+                        <span class="badge bg-secondary">카탈로그 기준</span>
+                        <span
+                          v-if="pair.result"
+                          class="badge"
+                          :class="
+                            CANDIDATE_LABELS[pair.result.candidate_verdict]?.cls || 'bg-secondary'
+                          "
+                          :title="`서버 비교 값: ${pair.result.candidate_verdict}`"
+                          >{{
+                            CANDIDATE_LABELS[pair.result.candidate_verdict]?.text ||
+                            pair.result.candidate_verdict
+                          }}</span
+                        >
+                        <span v-else class="badge bg-secondary">비교 결과 없음</span>
+                      </div>
+                      <div v-if="claimText(row, pair.candidate)" class="mt-1">
+                        <span class="text-muted">기재 사양</span>
+                        {{ claimText(row, pair.candidate) }}
+                      </div>
+                      <div v-else-if="specSummary(pair.candidate)" class="mt-1">
+                        <span class="text-muted">기재 사양</span>
+                        {{ specSummary(pair.candidate) }}
+                      </div>
+                      <div v-else class="mt-1 text-muted">이 항목의 기재 사양 없음</div>
+                      <div v-if="pair.result?.rationale" class="mt-1">
+                        <span class="text-muted">비교 사유</span>
+                        {{ pair.result.rationale }}
+                      </div>
+                      <button
+                        class="btn btn-link btn-sm p-0 text-start small"
+                        @click="openCandidateSource(row, pair.candidate)"
+                      >
+                        <i class="bi bi-file-earmark-text me-1"></i>출처 원문 보기
+                      </button>
+                      <span class="text-muted ms-1">{{
+                        pair.candidate.source?.page
+                          ? `저장된 참조 위치 p.${pair.candidate.source.page}`
+                          : '위치 미확인'
+                      }}</span>
+                    </div>
+                  </template>
                   <span v-else class="text-muted">연결된 제품 없음</span>
                 </td>
                 <td class="text-break">
-                  <template v-if="row.company_value">{{ row.company_value }}</template>
+                  <template v-if="row.comparison_candidates?.length && !row.product">
+                    <span class="text-muted">미확정 (제안 제품·옵션 확인 필요)</span>
+                    <details v-if="row.company_value" class="ft-help mt-1">
+                      <summary>서버 기록 값</summary>
+                      <p class="text-break">{{ row.company_value }}</p>
+                    </details>
+                  </template>
+                  <template v-else-if="row.company_value">{{ row.company_value }}</template>
                   <span v-else class="text-muted">
                     {{ row.verdict ? '기록된 회사 값 없음' : '판정 전' }}
                   </span>
@@ -254,9 +384,28 @@ const hasRefs = (row) =>
                   </div>
                   <span v-if="!hasRefs(row)" class="text-muted">자료 미등록 또는 연결 없음</span>
                 </td>
-                <td class="text-nowrap">
-                  <VerdictBadge :verdict="row.verdict" />
-                  <RiskDot :risk="row.risk_level" class="ms-1" />
+                <td>
+                  <div class="text-nowrap">
+                    <VerdictBadge :verdict="row.verdict" />
+                    <RiskDot :risk="row.risk_level" class="ms-1" />
+                  </div>
+                  <div v-if="row.interpretation_review" class="mt-1">
+                    <span class="badge bg-warning">원문 해석 확인 필요</span>
+                    <div v-if="row.interpretation_review.reason" class="text-break mt-1">
+                      {{ row.interpretation_review.reason }}
+                    </div>
+                    <button
+                      v-if="row.interpretation_review.source_document_id"
+                      class="btn btn-link btn-sm p-0 text-start small"
+                      @click="openReviewSource(row)"
+                    >
+                      해석 근거 원문 보기
+                    </button>
+                  </div>
+                  <details v-if="row.rationale" class="ft-help mt-1">
+                    <summary>최종 판정 사유</summary>
+                    <p class="text-break">{{ row.rationale }}</p>
+                  </details>
                 </td>
               </tr>
             </tbody>
@@ -278,10 +427,12 @@ const hasRefs = (row) =>
 
     <DocumentOffcanvas
       :document-id="viewer?.documentId ?? null"
-      kind="reference"
+      :page="viewer?.page || 0"
+      :quote="viewer?.quote || ''"
+      :kind="viewer?.kind || 'reference'"
       :context-title="viewer?.title || ''"
       :context-text="viewer?.text || ''"
-      position-note="이 화면은 자료의 위치(페이지)를 받지 않아 문서의 처음부터 표시합니다."
+      :position-note="viewer?.note || ''"
       @close="viewer = null"
     />
   </div>
@@ -289,7 +440,17 @@ const hasRefs = (row) =>
 
 <style scoped>
 .compare-table {
-  min-width: 62rem;
+  min-width: 60rem;
+}
+.compare-table td:nth-child(3) {
+  min-width: 18rem;
+}
+.cand {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--ft-border);
+  border-left: 3px solid var(--ft-border-strong);
+  border-radius: 0.3rem;
+  background: var(--ft-surface);
 }
 .compare-table th {
   white-space: nowrap;
