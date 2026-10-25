@@ -28,7 +28,7 @@ const props = defineProps({
 const emit = defineEmits(['evaluate', 'changed'])
 
 const EVIDENCE_LABELS = {
-  product: '사양서',
+  product: '제품 자료',
   test_report: '시험성적서',
   certificate: '인증서',
   delivery_record: '납품실적',
@@ -500,6 +500,15 @@ function doReevaluate() {
                   <div v-if="row.evaluation.rule_trace?.interpolation" class="text-muted mt-1">
                     계산: {{ row.evaluation.rule_trace.interpolation }}
                   </div>
+                  <details
+                    v-if="Object.keys(row.evaluation.rule_trace || {}).length"
+                    class="ft-help mt-1"
+                  >
+                    <summary>서버 판정 계산 기록</summary>
+                    <pre class="small mb-0 trace">{{
+                      JSON.stringify(row.evaluation.rule_trace, null, 2)
+                    }}</pre>
+                  </details>
                 </section>
                 <section class="mb-3">
                   <div class="detail-label">
@@ -930,5 +939,10 @@ function doReevaluate() {
   .detail {
     margin-left: 0;
   }
+}
+.trace {
+  white-space: pre-wrap;
+  max-height: 14rem;
+  overflow: auto;
 }
 </style>

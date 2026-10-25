@@ -1,6 +1,6 @@
 <script setup>
 // ① 핵심 요구사항 (specs/05 §3 ①)
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 import { bidItems, bidRequirements } from '@/api/bids'
 import { downloadDocument } from '@/api/documents'
@@ -37,6 +37,37 @@ const requirements = ref([])
 const loading = ref(true)
 const loadError = ref('')
 const groupBy = ref('category')
+// 화면에서만 걸러 보는 검색·필터(서버 값이나 판정은 바꾸지 않는다)
+const filters = reactive({ q: '', category: '', item: '', mandatory: false })
+const hasFilters = computed(
+  () => !!filters.q.trim() || !!filters.category || filters.item !== '' || filters.mandatory,
+)
+function resetFilters() {
+  Object.assign(filters, { q: '', category: '', item: '', mandatory: false })
+}
+const filtered = computed(() => {
+  const q = filters.q.trim().toLowerCase()
+  return requirements.value.filter((r) => {
+    if (filters.category && r.category !== filters.category) return false
+    if (filters.item === 'none' && r.item) return false
+    if (filters.item !== '' && filters.item !== 'none' && r.item !== Number(filters.item)) {
+      return false
+    }
+    if (filters.mandatory && !r.is_mandatory) return false
+    if (q) {
+      const hay = `${r.title} ${r.requirement_text} ${r.source_quote || ''}`.toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
+})
+
+// 정규화 값은 서버가 준 키를 그대로 보여 준다(의미를 덧붙이거나 숨기지 않는다).
+function normalizedEntries(r) {
+  return Object.entries(r.normalized || {})
+    .filter(([k]) => k !== 'placeholder')
+    .map(([k, v]) => [k, typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)])
+}
 const emptyViewer = {
   documentId: null,
   page: 0,
@@ -89,15 +120,15 @@ const groups = computed(() => {
       .map((id) => ({
         key: `i${id}`,
         label: id ? itemLabel(items.value.find((i) => i.id === id)) : '공고 공통',
-        rows: requirements.value.filter((r) => r.item === id),
+        rows: filtered.value.filter((r) => r.item === id),
       }))
       .filter((g) => g.rows.length)
   }
   return REQUIREMENT_CATEGORIES.map((c) => ({
     key: c.value,
     label: c.label,
-    rows: requirements.value.filter((r) => r.category === c.value),
-  })).filter((g) => g.rows.length || MIN_CATEGORIES.includes(g.key))
+    rows: filtered.value.filter((r) => r.category === c.value),
+  })).filter((g) => g.rows.length || (!hasFilters.value && MIN_CATEGORIES.includes(g.key)))
 })
 
 const itemLabel = (item) => (item ? `${item.item_no || '-'}. ${item.name}` : '')
@@ -313,6 +344,62 @@ async function download(attachment) {
           <p>비어 있다는 것은 공고에 조건이 없다는 뜻이 아닙니다. 첨부 원문으로 직접 확인하세요.</p>
         </details>
       </EmptyState>
+      <div v-else class="card-body border-bottom py-2">
+        <div class="row g-2 align-items-center">
+          <div class="col-12 col-md-4">
+            <input
+              v-model="filters.q"
+              class="form-control form-control-sm"
+              placeholder="요구사항 검색 (제목·내용·저장된 인용문)"
+              aria-label="요구사항 검색"
+            />
+          </div>
+          <div class="col-6 col-md-auto">
+            <select
+              v-model="filters.category"
+              class="form-select form-select-sm"
+              aria-label="카테고리"
+            >
+              <option value="">카테고리: 전체</option>
+              <option v-for="c in REQUIREMENT_CATEGORIES" :key="c.value" :value="c.value">
+                {{ c.label }}
+              </option>
+            </select>
+          </div>
+          <div class="col-6 col-md-auto">
+            <select v-model="filters.item" class="form-select form-select-sm" aria-label="품목">
+              <option value="">품목: 전체</option>
+              <option value="none">공고 공통</option>
+              <option v-for="i in items" :key="i.id" :value="String(i.id)">
+                {{ itemLabel(i) }}
+              </option>
+            </select>
+          </div>
+          <div class="col-auto">
+            <div class="form-check mb-0">
+              <input
+                id="req-mandatory"
+                v-model="filters.mandatory"
+                class="form-check-input"
+                type="checkbox"
+              />
+              <label class="form-check-label small" for="req-mandatory">필수만</label>
+            </div>
+          </div>
+          <div v-if="hasFilters" class="col-auto">
+            <button class="btn btn-sm btn-outline-secondary" @click="resetFilters">초기화</button>
+          </div>
+          <div class="col-auto ms-md-auto small text-muted">
+            {{ hasFilters ? `${filtered.length} / ` : '' }}전체 {{ requirements.length }}건
+          </div>
+        </div>
+      </div>
+      <EmptyState
+        v-if="!loading && !loadError && requirements.length && !filtered.length"
+        message="조건에 맞는 요구사항이 없습니다."
+      >
+        <button class="btn btn-sm btn-outline-secondary" @click="resetFilters">필터 초기화</button>
+      </EmptyState>
       <table v-else class="table table-sm align-middle mb-0 small req-table">
         <tbody v-for="group in groups" :key="group.key">
           <tr class="table-light">
@@ -338,6 +425,18 @@ async function download(attachment) {
                 >· {{ r.category_label }}</span
               >
               <div class="text-muted text-break">{{ r.requirement_text }}</div>
+              <details v-if="normalizedEntries(r).length || r.source_quote" class="ft-help mt-1">
+                <summary>조건·단위·저장된 인용문</summary>
+                <dl v-if="normalizedEntries(r).length" class="row mb-1">
+                  <template v-for="[k, v] in normalizedEntries(r)" :key="k">
+                    <dt class="col-sm-4 fw-normal">{{ k }}</dt>
+                    <dd class="col-sm-8 mb-0 text-break">{{ v }}</dd>
+                  </template>
+                </dl>
+                <p v-if="r.source_quote" class="mb-0 text-break">
+                  저장된 인용문: “{{ r.source_quote }}”
+                </p>
+              </details>
             </td>
             <td>
               <button
@@ -346,9 +445,11 @@ async function download(attachment) {
                 :title="r.source_quote"
                 @click="openSource(r)"
               >
-                <i class="bi bi-quote me-1"></i>{{ r.source_attachment_name
-                }}<span v-if="r.source_page"> p.{{ r.source_page }}</span>
+                <i class="bi bi-quote me-1"></i>{{ r.source_attachment_name }}
               </button>
+              <div v-if="r.source_attachment_name" class="small text-muted">
+                {{ r.source_page ? `저장된 참조 위치 p.${r.source_page}` : '위치 미확인' }}
+              </div>
               <span v-else class="text-muted">-</span>
             </td>
           </tr>
@@ -371,6 +472,18 @@ async function download(attachment) {
 <style scoped>
 .item-table {
   min-width: 40rem;
+}
+@media (max-width: 575.98px) {
+  /* 좁은 화면: 요구 내용을 전체 폭으로 읽고 출처 버튼은 그 아래에 둔다 */
+  .req-table tbody tr:not(.table-light) {
+    display: flex;
+    flex-direction: column;
+  }
+  .req-table tbody tr:not(.table-light) td {
+    width: 100% !important;
+    padding-top: 0.15rem;
+    padding-bottom: 0.15rem;
+  }
 }
 .req-table td:last-child {
   word-break: break-all;
