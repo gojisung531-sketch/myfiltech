@@ -12,6 +12,7 @@ import {
 import BaseModal from '@/components/BaseModal.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import DocumentOffcanvas from '@/components/DocumentOffcanvas.vue'
+import LocationStatus from '@/components/LocationStatus.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ReadableText from '@/components/ReadableText.vue'
 import RiskDot from '@/components/RiskDot.vue'
@@ -19,6 +20,7 @@ import VerdictBadge from '@/components/VerdictBadge.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
 import { errorMessage } from '@/utils/errors'
+import { statusInfo, viewerFromLocation } from '@/utils/evidenceLocation'
 import { formatDateTime } from '@/utils/format'
 import { RISK_LEVELS, VERDICTS } from '@/utils/options'
 
@@ -53,6 +55,7 @@ const emptyViewer = {
   title: '',
   text: '',
   note: '',
+  location: null,
 }
 const viewer = ref({ ...emptyViewer })
 
@@ -140,6 +143,25 @@ function evidencePosition(e) {
 }
 
 function openEvidence(e, row) {
+  const loc = e.source_location
+  if (loc?.document_id) {
+    // 저장 판정이 기록한 근거를 지금 원본과 대조한 위치(B6B). 판정은 바뀌지 않는다.
+    viewer.value = {
+      ...viewerFromLocation(loc, {
+        title: row.title,
+        text: e.type === 'bid_quote' ? row.requirement_text : e.label,
+        note: '',
+      }),
+    }
+    return
+  }
+  if (loc) {
+    toast.show(
+      `원문을 열 수 없습니다 — ${statusInfo(loc).label}. ${statusInfo(loc).reason || ''}`,
+      'warning',
+    )
+    return
+  }
   if (!e.document_id) {
     toast.show(
       isManual(e)
@@ -558,7 +580,11 @@ function doReevaluate() {
                       <span v-if="!e.document_id" class="text-muted">
                         ({{ isManual(e) ? '수동 입력 · ' : '' }}원본 문서 미연결)</span
                       >
-                      <div class="text-muted">{{ evidencePosition(e) }}</div>
+                      <div v-if="e.source_location" class="small">
+                        <LocationStatus :location="e.source_location" />
+                        <span class="text-muted ms-1">· 저장된 판정 근거</span>
+                      </div>
+                      <div v-else class="text-muted">{{ evidencePosition(e) }}</div>
                       <div v-if="e.quote" class="text-muted fst-italic text-break">
                         저장된 인용문: “{{ e.quote }}”
                       </div>
@@ -898,6 +924,7 @@ function doReevaluate() {
       :context-title="viewer.title"
       :context-text="viewer.text"
       :position-note="viewer.note"
+      :location="viewer.location"
       @close="viewer = { ...emptyViewer }"
     />
   </div>

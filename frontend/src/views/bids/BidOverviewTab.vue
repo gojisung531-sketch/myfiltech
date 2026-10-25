@@ -6,9 +6,11 @@ import { bidItems, bidRequirements } from '@/api/bids'
 import { downloadDocument } from '@/api/documents'
 import DocumentOffcanvas from '@/components/DocumentOffcanvas.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import LocationStatus from '@/components/LocationStatus.vue'
 import ReadableText from '@/components/ReadableText.vue'
 import { useToastStore } from '@/stores/toast'
 import { errorMessage } from '@/utils/errors'
+import { statusInfo, viewerFromLocation } from '@/utils/evidenceLocation'
 import {
   formatBytes,
   formatDateTime,
@@ -73,6 +75,7 @@ const emptyViewer = {
   kind: 'attachment',
   title: '',
   text: '',
+  location: null,
 }
 const viewer = ref({ ...emptyViewer })
 
@@ -213,6 +216,19 @@ const reviewItems = computed(() =>
 
 function openSource(r) {
   // source_attachment는 첨부 ID다. 문서 ID는 첨부 목록의 document_id에서만 가져온다.
+  const loc = r.source_location
+  if (loc?.document_id) {
+    // 서버가 원본·인용을 대조한 위치(B6B). 숫자 페이지를 따로 해석하지 않는다.
+    viewer.value = viewerFromLocation(loc, { title: r.title, text: r.requirement_text })
+    return
+  }
+  if (loc) {
+    toast.show(
+      `원문을 열 수 없습니다 — ${statusInfo(loc).label}. ${statusInfo(loc).reason || ''}`,
+      'warning',
+    )
+    return
+  }
   const documentId = attachmentDocs.value[r.source_attachment]
   if (documentId) {
     viewer.value = {
@@ -555,7 +571,10 @@ async function download(attachment) {
                 <i class="bi bi-quote me-1"></i>{{ r.source_attachment_name }}
               </button>
               <div v-if="r.source_attachment_name" class="small text-muted">
-                {{ r.source_page ? `저장된 참조 위치 p.${r.source_page}` : '위치 미확인' }}
+                <LocationStatus v-if="r.source_location" :location="r.source_location" />
+                <template v-else>
+                  {{ r.source_page ? `저장된 참조 위치 p.${r.source_page}` : '위치 미확인' }}
+                </template>
               </div>
               <span v-else class="text-muted">-</span>
             </td>
@@ -571,6 +590,7 @@ async function download(attachment) {
       :kind="viewer.kind"
       :context-title="viewer.title"
       :context-text="viewer.text"
+      :location="viewer.location"
       @close="viewer = { ...emptyViewer }"
     />
   </div>

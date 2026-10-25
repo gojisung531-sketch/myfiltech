@@ -202,6 +202,7 @@ defineExpose({ load, openEdit })
                 </slot>
               </td>
               <td class="text-end text-nowrap">
+                <slot name="row-actions" :row="row" />
                 <button class="btn btn-sm btn-outline-secondary me-1" @click="openEdit(row)">
                   수정
                 </button>

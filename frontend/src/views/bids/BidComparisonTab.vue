@@ -8,12 +8,14 @@ import { bidItems, getComparison } from '@/api/bids'
 import BaseModal from '@/components/BaseModal.vue'
 import DocumentOffcanvas from '@/components/DocumentOffcanvas.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import LocationStatus from '@/components/LocationStatus.vue'
 import ReadableText from '@/components/ReadableText.vue'
 import RiskDot from '@/components/RiskDot.vue'
 import VerdictBadge from '@/components/VerdictBadge.vue'
 import { useToastStore } from '@/stores/toast'
 import { CANDIDATE_LABELS } from '@/utils/candidateLabels'
 import { errorMessage } from '@/utils/errors'
+import { statusInfo, viewerFromLocation } from '@/utils/evidenceLocation'
 
 const props = defineProps({
   bid: { type: Object, required: true },
@@ -85,7 +87,41 @@ function reevaluateItem() {
   emit('evaluate', { keepModified: true, requirementIds: ids })
 }
 
+const RELATION = {
+  SAVED_ID_REFERENCE: '저장된 판정이 연결한 인증서',
+  CURRENT_REFERENCE_ONLY: '현재 등록 자료 참고(저장된 판정에 미반영)',
+}
+const STORED_RELATION_NOTE =
+  '저장된 판정을 기준으로 한 근거입니다. 위치는 지금 원본과 다시 대조한 결과이며 판정은 바뀌지 않습니다.'
+
+// 서버가 계산한 근거 위치를 원문 패널로 넘긴다(저장 판정 근거와 현재 회사 참고자료는 역할이 다르다).
+function openLocation(loc, row, title, siblings = []) {
+  if (!loc?.document_id) {
+    toast.show(
+      `원문을 열 수 없습니다 — ${statusInfo(loc).label}. ${statusInfo(loc).reason || ''}`,
+      'warning',
+    )
+    return
+  }
+  viewer.value = {
+    ...viewerFromLocation(loc, { title: `${row.title} — ${title}`, text: loc.quote }),
+    locations: siblings,
+  }
+}
+
 function open(target, kind, row) {
+  const locs = (target.evidence_locations || []).filter((l) => l.document_id)
+  if (locs.length) {
+    viewer.value = {
+      ...viewerFromLocation(locs[0], {
+        title: `${row.title} — ${kind}`,
+        text: target.label,
+        note: RELATION[target.relation_to_evaluation] || '',
+      }),
+      locations: locs.filter((l) => l.document_id === locs[0].document_id),
+    }
+    return
+  }
   if (target.document_id) {
     viewer.value = {
       documentId: target.document_id,
@@ -267,6 +303,16 @@ const hasRefs = (row) =>
                 </td>
                 <td class="text-break">
                   <ReadableText :text="row.requirement_value" />
+                  <div v-if="row.source_location" class="mt-1">
+                    <button
+                      type="button"
+                      class="btn btn-link btn-sm p-0 text-start small"
+                      @click="openLocation(row.source_location, row, '공고 원문')"
+                    >
+                      <i class="bi bi-quote me-1"></i>공고 원문 보기
+                    </button>
+                    <div class="small"><LocationStatus :location="row.source_location" /></div>
+                  </div>
                 </td>
                 <td class="text-break">
                   <template v-if="row.product">
@@ -342,6 +388,60 @@ const hasRefs = (row) =>
                   </span>
                 </td>
                 <td>
+                  <details v-if="row.stored_evidence_locations?.length" class="ft-help mb-2">
+                    <summary>
+                      저장 판정 근거 위치 ({{ row.stored_evidence_locations.length }})
+                    </summary>
+                    <p class="mb-1">{{ STORED_RELATION_NOTE }}</p>
+                    <div
+                      v-for="(l, i) in row.stored_evidence_locations"
+                      :key="i"
+                      class="mb-1 text-break"
+                    >
+                      <button
+                        type="button"
+                        class="btn btn-link btn-sm p-0 text-start small"
+                        @click="openLocation(l, row, '저장된 판정 근거')"
+                      >
+                        {{ (l.quote || '').slice(0, 40) || '위치' }}
+                      </button>
+                      <div><LocationStatus :location="l" /></div>
+                    </div>
+                  </details>
+                  <details v-if="row.current_company_locations?.length" class="ft-help mb-2">
+                    <summary>
+                      현재 회사 참고 위치 ({{ row.current_company_locations.length }})
+                    </summary>
+                    <p class="mb-1">
+                      현재 등록된 회사 자료의 위치입니다.
+                      <template v-if="row.current_references_revise_stored_evaluation === false"
+                        >이미 저장된 판정에는 반영되지 않았습니다.</template
+                      >
+                    </p>
+                    <div
+                      v-for="(l, i) in row.current_company_locations"
+                      :key="i"
+                      class="mb-1 text-break"
+                    >
+                      <button
+                        type="button"
+                        class="btn btn-link btn-sm p-0 text-start small"
+                        @click="
+                          openLocation(
+                            l,
+                            row,
+                            '현재 회사 참고',
+                            row.current_company_locations.filter(
+                              (x) => x.document_id === l.document_id,
+                            ),
+                          )
+                        "
+                      >
+                        {{ (l.quote || '').slice(0, 40) || '위치' }}
+                      </button>
+                      <div><LocationStatus :location="l" /></div>
+                    </div>
+                  </details>
                   <div v-if="row.test_reports.length" class="mb-1">
                     <div class="text-muted">시험성적서</div>
                     <button
@@ -362,6 +462,11 @@ const hasRefs = (row) =>
                       @click="open(c, '인증', row)"
                     >
                       {{ c.label }}
+                      <span v-if="c.relation_to_evaluation" class="badge bg-secondary">{{
+                        c.relation_to_evaluation === 'SAVED_ID_REFERENCE'
+                          ? '저장 판정 연결'
+                          : '현재 참고만'
+                      }}</span>
                       <span v-if="c.status === 'EXPIRED'" class="badge bg-danger">만료</span>
                       <span v-else-if="c.status === 'EXPIRING'" class="badge bg-warning"
                         >만료 임박</span
@@ -432,6 +537,8 @@ const hasRefs = (row) =>
       :context-title="viewer?.title || ''"
       :context-text="viewer?.text || ''"
       :position-note="viewer?.note || ''"
+      :location="viewer?.location || null"
+      :locations="viewer?.locations || []"
       @close="viewer = null"
     />
   </div>

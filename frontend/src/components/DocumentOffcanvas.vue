@@ -1,10 +1,11 @@
 <script setup>
 // 원문 보기: 선택한 요구사항/참고 자료 정보(왼쪽·위)와 문서 뷰어(오른쪽·아래)를 함께 보여 준다.
 // 호출부는 저장된 값(document_id·인용문·위치)만 넘긴다. 이 화면은 값을 만들거나 검증하지 않는다.
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 import { getDocument } from '@/api/documents'
 import { errorMessage } from '@/utils/errors'
+import { fieldsText, ROLE_NOTE, statusInfo } from '@/utils/evidenceLocation'
 
 import DocumentViewer from './DocumentViewer.vue'
 
@@ -17,6 +18,10 @@ const props = defineProps({
   contextTitle: { type: String, default: '' }, // 선택한 요구사항·자료 이름
   contextText: { type: String, default: '' }, // 요구사항 원문 등 보조 설명
   positionNote: { type: String, default: '' }, // 위치 값 해석 주의 문구
+  // B6B 근거 위치 객체. 있으면 저장된 숫자 위치 대신 이것으로 이동·강조한다.
+  location: { type: Object, default: null },
+  // 같은 문서의 다른 위치들(예: 한 인증서의 필드별 위치). 사용자가 골라 볼 수 있다.
+  locations: { type: Array, default: () => [] },
 })
 const emit = defineEmits(['close'])
 
@@ -24,9 +29,21 @@ const KINDS = {
   requirement_source: { label: '공고 요구조건의 출처', badge: 'bg-info' },
   reference: { label: '필텍 쪽 연결·참고 자료', badge: 'bg-secondary' },
   attachment: { label: '직접 연 첨부', badge: 'bg-secondary' },
+  stored_evidence: { label: '저장된 판정 근거', badge: 'bg-info' },
+  current_reference: { label: '현재 회사 참고자료 (저장 판정에 미반영)', badge: 'bg-secondary' },
 }
 
 const doc = ref(null)
+// 같은 문서의 위치 목록에서 사용자가 고른 위치(없으면 호출부가 준 위치)
+const picked = ref(null)
+const activeLocation = computed(() =>
+  picked.value != null ? props.locations[picked.value] || props.location : props.location,
+)
+const locInfo = computed(() => (activeLocation.value ? statusInfo(activeLocation.value) : null))
+watch(
+  () => [props.location, props.documentId],
+  () => (picked.value = null),
+)
 const error = ref('')
 const loading = ref(false)
 const panel = ref(null)
@@ -138,11 +155,48 @@ onBeforeUnmount(() => {
             <span class="text-muted">열린 문서:</span> {{ doc.display_name }}
           </div>
 
-          <div v-if="quote" class="doc-quote small mt-3">
-            <div class="text-muted">저장된 인용문</div>
-            <div class="text-break fst-italic">“{{ quote }}”</div>
+          <div v-if="activeLocation?.quote || quote" class="doc-quote small mt-3">
+            <div class="text-muted">
+              {{
+                activeLocation?.role === 'CURRENT_COMPANY_REFERENCE'
+                  ? '수동 확인한 값'
+                  : '저장된 인용문'
+              }}
+            </div>
+            <div class="text-break fst-italic">“{{ activeLocation?.quote || quote }}”</div>
           </div>
-          <div v-if="page" class="small mt-2">
+          <div v-if="activeLocation && locInfo" class="small mt-2">
+            <span class="text-muted">위치 확인:</span>
+            <span class="badge ms-1" :class="locInfo.tone">{{ locInfo.label }}</span>
+            <div v-if="fieldsText(activeLocation)" class="text-muted mt-1">
+              대상 항목: {{ fieldsText(activeLocation) }}
+            </div>
+            <div v-if="ROLE_NOTE[activeLocation.role]" class="text-muted mt-1">
+              {{ ROLE_NOTE[activeLocation.role] }}
+            </div>
+          </div>
+          <div v-if="locations.length > 1" class="small mt-2">
+            <div class="text-muted">이 자료의 다른 위치 ({{ locations.length }}곳)</div>
+            <ul class="list-unstyled mb-0 loc-list">
+              <li v-for="(l, i) in locations" :key="i">
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm p-0 text-start"
+                  :aria-current="(picked ?? locations.indexOf(location)) === i ? 'true' : undefined"
+                  @click="picked = i"
+                >
+                  {{ fieldsText(l) || '위치' }}
+                  <span class="text-muted"
+                    >·
+                    {{
+                      l.location_value?.page ? `p.${l.location_value.page}` : statusInfo(l).label
+                    }}</span
+                  >
+                </button>
+              </li>
+            </ul>
+          </div>
+          <div v-if="page && !activeLocation" class="small mt-2">
             <span class="text-muted">저장된 참조 위치:</span> p.{{ page }}
           </div>
           <div v-if="positionNote" class="small text-muted mt-1">{{ positionNote }}</div>
@@ -165,7 +219,13 @@ onBeforeUnmount(() => {
               다시 시도
             </button>
           </div>
-          <DocumentViewer v-else-if="doc" :key="doc.id" :document="doc" :initial-page="page" />
+          <DocumentViewer
+            v-else-if="doc"
+            :key="doc.id"
+            :document="doc"
+            :initial-page="activeLocation ? 0 : page"
+            :location="activeLocation"
+          />
           <div v-else-if="loading" class="text-center py-5">
             <span class="spinner-border"></span>
           </div>
@@ -192,6 +252,9 @@ onBeforeUnmount(() => {
   border: 1px solid var(--ft-border);
   border-radius: 0.4rem;
   background: var(--ft-bg);
+}
+.loc-list li {
+  margin-top: 0.15rem;
 }
 .doc-quote {
   padding-left: 0.6rem;

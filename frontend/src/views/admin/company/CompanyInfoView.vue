@@ -4,6 +4,7 @@ import { onMounted, ref } from 'vue'
 import { getCompany, updateCompany } from '@/api/company'
 import CompanyNav from '@/components/CompanyNav.vue'
 import EntityForm from '@/components/EntityForm.vue'
+import EvidenceLocationsPanel from '@/components/EvidenceLocationsPanel.vue'
 import { useToastStore } from '@/stores/toast'
 import { errorMessage } from '@/utils/errors'
 import { formatDateTime } from '@/utils/format'
@@ -95,6 +96,16 @@ async function save() {
         </p>
         <EntityForm ref="form" :fields="FIELDS" :model-value="company" id-prefix="company" />
         <div v-if="error" class="alert alert-danger py-2 small mt-3 mb-0">{{ error }}</div>
+      </div>
+      <div class="card-body border-top">
+        <EvidenceLocationsPanel
+          title="근거 위치 (수동 확인)"
+          :locations="company.evidence_locations || []"
+        />
+        <p class="small text-muted mt-2 mb-0">
+          사람이 원본에서 확인해 기록한 위치입니다. 수동 확인 페이지는 글자 대조를 하지 않았으며,
+          저장된 판정에 반영된 근거를 뜻하지 않습니다.
+        </p>
       </div>
       <div class="card-footer d-flex align-items-center">
         <span class="small text-muted me-auto">

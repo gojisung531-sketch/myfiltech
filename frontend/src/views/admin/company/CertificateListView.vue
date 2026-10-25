@@ -2,6 +2,7 @@
 import { certificates } from '@/api/company'
 import CompanyNav from '@/components/CompanyNav.vue'
 import CrudPage from '@/components/CrudPage.vue'
+import EvidenceLocationsPanel from '@/components/EvidenceLocationsPanel.vue'
 import { CERT_STATUS_VARIANT, formatDate } from '@/utils/format'
 import { CERT_STATUSES, CERT_TYPES } from '@/utils/options'
 
@@ -68,6 +69,14 @@ const FIELDS = [
         <div v-else-if="rows.some((r) => r.status === 'EXPIRING')" class="alert alert-warning py-2">
           만료가 임박한 인증서가 있습니다.
         </div>
+      </template>
+      <template #row-actions="{ row }">
+        <EvidenceLocationsPanel
+          v-if="row.evidence_locations?.length"
+          mode="button"
+          :locations="row.evidence_locations"
+          :title="`인증서 ${row.cert_no} 근거 위치`"
+        />
       </template>
       <template #cell-status="{ row }">
         <span :class="['badge', `bg-${CERT_STATUS_VARIANT[row.status]}`]">{{
