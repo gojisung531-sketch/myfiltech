@@ -3,7 +3,7 @@
 from apps.company.models import Certificate, DeliveryRecord, TestReport
 
 from .context import EvaluationContext
-from .evidence import target_product
+from .evidence import manufacturer_inputs, target_product
 from .grades import family_of, product_grades
 
 
@@ -14,6 +14,9 @@ def _num(value) -> str:
 def product_spec(product, category: str) -> str:
     if product is None:
         return ""
+    claims = (product.extra or {}).get("manufacturer_claims") or {}
+    if claims and category in ("EFFICIENCY", "PRESSURE_DROP", "AIRFLOW", "OTHER"):
+        return claims.get(category, {}).get("display", "")
     if category == "DIMENSION":
         return product.dimension_text
     if category == "FILTER_TYPE":
@@ -120,6 +123,7 @@ def comparison(bid) -> dict:
         evaluation = getattr(requirement, "evaluation", None)
         product = target_product(requirement, ctx)
         category = requirement.category
+        candidates = manufacturer_inputs(requirement, ctx)
 
         report_ids = _evidence_ids(evaluation, "test_report")
         if (
@@ -157,7 +161,19 @@ def comparison(bid) -> dict:
                 "item_id": requirement.item_id,
                 "item_label": str(requirement.item) if requirement.item_id else None,
                 "product": {"id": product.pk, "model_no": product.model_no} if product else None,
-                "product_spec": product_spec(product, category),
+                "product_spec": product_spec(product, category)
+                if product
+                else "; ".join(
+                    f"비교 후보 {p['model_no']} (제조사 기재): "
+                    f"{product_spec(next(v for v in ctx.products if v.pk == p['product_id']), category)}"
+                    for p in candidates
+                ),
+                "comparison_candidates": candidates,
+                "interpretation_review": (requirement.normalized or {}).get(
+                    "interpretation_review"
+                ),
+                "comparison_trace": evaluation.rule_trace if evaluation else {},
+                "rationale": evaluation.rationale if evaluation else "",
                 "test_reports": [_report_ref(reports[i]) for i in report_ids if i in reports],
                 "certificates": [_cert_ref(certs[i], ctx) for i in cert_ids if i in certs],
                 "delivery_records": [_record_ref(records[i]) for i in record_ids if i in records],

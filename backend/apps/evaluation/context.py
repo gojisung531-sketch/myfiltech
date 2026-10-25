@@ -46,13 +46,20 @@ class EvaluationContext:
     matched_products: list = field(default_factory=list)
     tolerance: float = 3
     nominal: dict = field(default_factory=dict)
+    candidate_products: dict = field(default_factory=dict)
+    comparison_product: object = None
 
     def reports_for(self, product) -> list:
         return [r for r in self.test_reports if r.product_id == getattr(product, "pk", None)]
 
     @classmethod
     def for_bid(cls, bid, mode: str | None = None) -> "EvaluationContext":
+        from apps.bids.models import BidProductMatch
+
         ref, simulation = reference_date(bid, mode)
+        candidates = {}
+        for match in BidProductMatch.objects.filter(bid=bid).select_related("product"):
+            candidates.setdefault(match.item_id, []).append(match.product)
         return cls(
             reference_date=ref,
             is_simulation=simulation,
@@ -71,4 +78,5 @@ class EvaluationContext:
             else [],
             tolerance=get_setting("evaluation.dimension_tolerance_mm"),
             nominal=get_setting("evaluation.nominal_dimension_map"),
+            candidate_products=candidates,
         )

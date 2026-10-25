@@ -132,7 +132,7 @@ def score_item_product(
     return MatchScore(product, round(score, 3), parts, reasons)
 
 
-def match_items(bid, ctx: EvaluationContext | None = None) -> None:
+def match_items(bid, ctx: EvaluationContext | None = None, *, confirm: bool = True) -> None:
     """Score every item against every active product; keep the top 3 per item."""
     from apps.bids.models import BidProductMatch
 
@@ -168,6 +168,8 @@ def match_items(bid, ctx: EvaluationContext | None = None) -> None:
                     reason=match.reason,
                     rank=rank,
                 )
+            if not confirm:
+                continue
             best = scored[0] if scored else None
             item.matched_product = best.product if best else None
             item.match_score = best.score if best else None

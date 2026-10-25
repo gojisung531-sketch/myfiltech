@@ -3,14 +3,21 @@ the LLM. The LLM never overrides a rule verdict.
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 from apps.core.app_settings import get_setting
 from apps.core.units import parse_number
 
 from .context import EvaluationContext, nominal_family
-from .evidence import product_evidence, record_evidence, report_evidence, target_product
+from .evidence import (
+    candidate_products,
+    manufacturer_inputs,
+    product_evidence,
+    record_evidence,
+    report_evidence,
+    target_product,
+)
 from .grades import FAMILY_LABELS, family_of, meets, parse_grade, product_grades, required_grade
 
 MET = "MET"
@@ -218,22 +225,13 @@ def evaluate_track_record(requirement, ctx: EvaluationContext) -> RuleResult | N
         "candidates": len(records),
         "qualifying": [r.delivered_ym for r, _ in qualifying],
     }
-    evidences = [
-        {
-            "type": "delivery_record",
-            "id": record.pk,
-            "label": f"{record.delivered_ym} {record.client} {record.project_name}",
-            "page": 1,
-            "quote": ", ".join(p.model_no for p in products),
-        }
-        for record, products in qualifying
-    ]
+    evidences = [record_evidence(record) for record, _ in qualifying]
     if not qualifying:
         return RuleResult(
-            NEEDS_SUPPLEMENT,
+            NEEDS_CONFIRMATION,
             "HIGH" if requirement.is_mandatory else "MEDIUM",
-            f"요구 실적 조건({condition})을 만족하는 납품실적이 없습니다.",
-            action_items=["실적 요건 충족 여부 재확인 — 미충족 시 입찰 참가자격 미달"],
+            f"등록된 자료에서 요구 실적 조건({condition})을 확인할 수 없습니다. 회사의 실적 미보유를 뜻하지 않습니다.",
+            action_items=["해당 기간·규격·단일 계약·금액의 실제 증빙 확인"],
             trace=trace,
         )
     company_value = "; ".join(e["label"] for e in evidences)
@@ -288,10 +286,10 @@ def _fmt(value) -> str:
 
 def _no_product(requirement) -> RuleResult:
     return RuleResult(
-        NEEDS_SUPPLEMENT,
-        "HIGH",
-        "요구 사양에 대응하는 매칭 제품이 없습니다.",
-        action_items=["대응 가능 제품 검토 또는 신규 사양 제작 검토"],
+        NEEDS_CONFIRMATION,
+        "MEDIUM",
+        "요구 사양과 비교할 제품이 연결되지 않아 충족·미달을 확정할 수 없습니다.",
+        action_items=["현재 자료의 비교 후보와 실제 제안 제품 확인"],
     )
 
 
@@ -437,6 +435,18 @@ def evaluate_filter_type(requirement, ctx: EvaluationContext) -> RuleResult | No
     if product is None:
         return _no_product(requirement)
     label = product.get_filter_type_display()
+    shape = (requirement.normalized or {}).get("shape")
+    if shape:
+        actual_shape = (product.extra or {}).get("shape")
+        if not actual_shape or actual_shape != shape:
+            return RuleResult(
+                NEEDS_SUPPLEMENT if actual_shape else NEEDS_CONFIRMATION,
+                "MEDIUM",
+                f"요구 형상 {shape} / 제조사 기재 형상 {actual_shape or '미확인'}.",
+                f"{product.model_no} {label} / {actual_shape or '형상 미확인'}",
+                evidences=[product_evidence(product)],
+                trace={"required_shape": shape, "manufacturer_shape": actual_shape},
+            )
     if product.filter_type == required:
         return RuleResult(
             MET,
@@ -1227,10 +1237,10 @@ def evaluate_submission_doc(requirement, ctx: EvaluationContext) -> RuleResult |
             else "당사 작성·발급"
         )
         return RuleResult(
-            MET,
+            NEEDS_CONFIRMATION,
             "LOW",
-            f"'{doc}'은(는) {issuer} 서류로 제출 가능합니다.",
-            issuer,
+            f"'{doc}'은(는) {issuer} 대상 서류이나, 작성·발급 가능 여부와 제출 준비를 확인하지 않았습니다.",
+            f"{issuer} 대상 — 준비 상태 미확인",
             action_items=[
                 f"{timing or '제출 시점'}에 '{doc}' {'발급' if '발급' in issuer else '작성'}"
             ],
@@ -1243,11 +1253,11 @@ def evaluate_placeholder(requirement, ctx: EvaluationContext) -> RuleResult:
     return RuleResult(
         NEEDS_CONFIRMATION,
         "MEDIUM",
-        f"공고에 {label} 요구사항이 명시되어 있지 않습니다.",
+        f"추출 결과에서 {label} 요구사항을 확인하지 못했습니다. 원문 확인이 필요합니다.",
         action_items=[f"발주처에 {label} 요구 조건 확인"],
         trace={
             "placeholder": True,
-            "question": f"공고문에 {label} 관련 요구 조건이 없어 확인을 요청드립니다.",
+            "question": f"원문에서 {label} 관련 요구 조건을 먼저 확인해 주세요.",
         },
     )
 
@@ -1273,5 +1283,60 @@ RULES = {
 def evaluate(requirement, ctx: EvaluationContext) -> RuleResult | None:
     if (requirement.normalized or {}).get("placeholder"):
         return evaluate_placeholder(requirement, ctx)
+    review = (requirement.normalized or {}).get("interpretation_review") or {}
+    candidates = candidate_products(requirement, ctx)
+    if review.get("status") == NEEDS_CONFIRMATION:
+        return RuleResult(
+            NEEDS_CONFIRMATION,
+            "MEDIUM",
+            review.get("reason") or "원문 조건의 적용 범위를 확인해야 합니다.",
+            company_value=_candidate_values(requirement, ctx),
+            action_items=["원문 조건·자료 범위 확인 후 해당 항목만 검토"],
+            evidences=[product_evidence(p) for p in candidates],
+            trace={
+                "interpretation_review": review,
+                "comparison_candidates": manufacturer_inputs(requirement, ctx),
+            },
+        )
+    if target_product(requirement, ctx) is None and candidates:
+        return evaluate_candidates(requirement, ctx)
     rule = RULES.get(requirement.category)
     return rule(requirement, ctx) if rule else None
+
+
+def _candidate_values(requirement, ctx) -> str:
+    from .comparison import product_spec
+
+    return "; ".join(
+        f"비교 후보 {p.model_no} (제조사 기재): {product_spec(p, requirement.category)}"
+        for p in candidate_products(requirement, ctx)
+    )
+
+
+def evaluate_candidates(requirement, ctx) -> RuleResult:
+    """Compare stated attributes without turning a proposed candidate into a selected item."""
+    candidates = candidate_products(requirement, ctx)
+    comparisons = []
+    for product in candidates:
+        rule = RULES.get(requirement.category)
+        # Shared pair ratings are not stored as individual product ratings. Numeric
+        # performance without comparable conditions remains unknown in the usual rules.
+        result = rule(requirement, replace(ctx, comparison_product=product)) if rule else None
+        comparisons.append(
+            {
+                "product_id": product.pk,
+                "candidate_verdict": result.verdict if result else NEEDS_CONFIRMATION,
+                "rationale": result.rationale if result else "비교 가능한 조건·항목 자료 미확인",
+                "trace": result.trace if result else {},
+            }
+        )
+    return RuleResult(
+        NEEDS_CONFIRMATION,
+        "MEDIUM",
+        "카탈로그 후보의 기재 사양을 비교했으나 실제 제안 제품·옵션은 미확정입니다. "
+        "후보 비교 결과는 확정 제품의 충족·미달 또는 검증된 시험 결과가 아닙니다.",
+        company_value=_candidate_values(requirement, ctx),
+        action_items=["직원에게 제안 모델·옵션 확인; 현재 카탈로그 비교는 계속 활용"],
+        evidences=[product_evidence(p) for p in candidates],
+        trace={"selection_status": "CANDIDATE_NOT_CONFIRMED", "candidate_comparisons": comparisons},
+    )

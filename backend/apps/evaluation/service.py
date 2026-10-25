@@ -11,7 +11,7 @@ from apps.llm.services import LLMNotConfigured, is_llm_configured, run_task
 
 from . import rules
 from .context import EvaluationContext
-from .evidence import company_evidence
+from .evidence import company_evidence, product_evidence
 from .models import RISK_ORDER, EvaluationHistory, RequirementEvaluation, Verdict
 
 logger = logging.getLogger(__name__)
@@ -151,6 +151,10 @@ def _llm_evidences(out: dict) -> list[dict]:
 
 def merge(requirement, result: rules.RuleResult | None, out: dict | None) -> dict:
     """Combine rule and LLM output. A rule verdict is never changed by the LLM."""
+    if result and (
+        result.trace.get("interpretation_review") or result.trace.get("selection_status")
+    ):
+        out = None  # A generated answer must not hide a reviewed ambiguity/candidate limitation.
     quote = bid_quote(requirement)
     if result is not None:
         risk = result.risk_level
@@ -198,7 +202,9 @@ def merge(requirement, result: rules.RuleResult | None, out: dict | None) -> dic
             "auto_answer": out.get("auto_answer", "")
             or template_answer(verdict, out.get("company_value", ""), rationale, []),
             "decided_by": RequirementEvaluation.DecidedBy.LLM,
-            "rule_trace": {},
+            "rule_trace": {"source_validation": out["_source_validation"]}
+            if out.get("_source_validation")
+            else {},
         }
     else:
         rationale = "규칙으로 판정할 수 없고 LLM 판정 결과가 없어 담당자 확인이 필요합니다."
@@ -215,6 +221,55 @@ def merge(requirement, result: rules.RuleResult | None, out: dict | None) -> dic
             "rule_trace": {"unjudged": True},  # internal note, not for buyer-facing drafts
         }
     return data
+
+
+def validate_judgment_sources(out: dict, ctx, requirement=None) -> dict:
+    """Bound a source-scoped run to supplied, verified company references.
+
+    Catalog references describe manufacturer claims; they cannot establish a test,
+    certificate, commercial commitment or a selected product for a general requirement.
+    """
+    allowed = {}
+    for product in ctx.products:
+        if product.source_document_id and (product.extra or {}).get("manufacturer_source"):
+            ref = product_evidence(product)
+            allowed[(ref["type"], ref["id"], ref["page"], ref["quote"])] = ref
+    refs = []
+    for ref in _llm_evidences(out):
+        key = (ref["type"], ref["id"], ref["page"], ref["quote"])
+        if key in allowed:
+            refs.append(allowed[key])
+    result = {**out, "evidence_refs": refs}
+    if out.get("verdict") != Verdict.NEEDS_CONFIRMATION:
+        result["verdict"] = Verdict.NEEDS_CONFIRMATION
+        result["rationale"] = (
+            "제공된 제조사 후보 자료는 해당 회사의 이행·시험·자격 완료를 입증하지 않습니다. "
+            "해당 요구의 직접 근거와 적용 대상 확인이 필요합니다."
+        )
+        result["auto_answer"] = template_answer(
+            Verdict.NEEDS_CONFIRMATION, "", result["rationale"], []
+        )
+    if not refs:
+        title = requirement.title if requirement is not None else "해당 요구"
+        result["company_value"] = "카탈로그 사양은 별도 등록; 이 요구의 직접 이행 근거 미확인"
+        result["verdict"] = Verdict.NEEDS_CONFIRMATION
+        result["rationale"] = (
+            f"'{title}'의 회사 이행·자격·절차 완료를 확인할 직접 근거가 현재 입력에 없습니다. "
+            "등록된 제조사 사양은 해당 범위에서 비교하며, 이를 회사 미보유·실제 미달이나 시험·제출 완료로 확대하지 않습니다. "
+            "추출되지 않은 세부 조건은 원문에서 확인해야 합니다."
+        )
+        result["auto_answer"] = template_answer(
+            Verdict.NEEDS_CONFIRMATION, "", result["rationale"], []
+        )
+        result["action_items"] = [
+            f"'{title}'의 적용·이행 범위와 직접 자료 확인; 현재 카탈로그 비교는 계속 활용"
+        ]
+        result["clarification_question"] = ""
+        result["_source_validation"] = {
+            "company_reference_verified": False,
+            "unverified_generated_details_not_published": True,
+        }
+    return result
 
 
 def save_evaluation(requirement, data: dict, call_log=None) -> RequirementEvaluation:
@@ -258,6 +313,8 @@ def evaluate_bid(
     requirement_ids: list[int] | None = None,
     job=None,
     report=_noop,
+    rules_first: bool = False,
+    source_scoped: bool = False,
 ) -> dict:
     status = bid.ProcessingStatus
     bid.processing_status = status.EVALUATING
@@ -265,6 +322,10 @@ def evaluate_bid(
     bid.save(update_fields=["processing_status", "processing_error", "updated_at"])
     try:
         ctx = EvaluationContext.for_bid(bid)
+        if source_scoped and (ctx.test_reports or ctx.certificates or ctx.delivery_records):
+            raise ValueError(
+                "카탈로그 후보 전용 실행에 다른 정식 자료가 있습니다. 근거 범위를 다시 검토하세요."
+            )
         requirements = bid.requirements.select_related(
             "item__matched_product", "source_attachment__document", "evaluation"
         )
@@ -283,19 +344,26 @@ def evaluate_bid(
                 result = None
             pending.append((requirement, result))
 
+        if rules_first:
+            pending.sort(key=lambda pair: pair[1] is None)
         use_llm = get_setting("evaluation.use_llm") and is_llm_configured()
         size = max(1, int(get_setting("evaluation.batch_size")))
         counts = {"rule": 0, "llm": 0}
+        judge_batches = 0
         done = 0
         for start in range(0, len(pending), size):
             batch = pending[start : start + size]
             outs, call_log = ({}, None)
-            if use_llm:
+            judge_batch = [(req, rr) for req, rr in batch if rr is None] if rules_first else batch
+            if use_llm and judge_batch:
                 report(10 + int(80 * done / max(1, len(pending))), "LLM 판정 중")
-                outs, call_log = _judge(bid, batch, ctx, job)
+                outs, call_log = _judge(bid, judge_batch, ctx, job)
+                judge_batches += 1
             with transaction.atomic():
                 for requirement, result in batch:
                     out = outs.get(requirement.pk)
+                    if out and source_scoped:
+                        out = validate_judgment_sources(out, ctx, requirement)
                     save_evaluation(
                         requirement, merge(requirement, result, out), call_log if out else None
                     )
@@ -315,7 +383,8 @@ def evaluate_bid(
         "evaluated": len(pending),
         "skipped_modified": skipped,
         "by_rule": counts["rule"],
-        "llm_used": bool(use_llm),
+        "llm_used": bool(judge_batches),
+        "judge_batches": judge_batches,
         "counts": summary,
         "reference_date": str(ctx.reference_date),
     }

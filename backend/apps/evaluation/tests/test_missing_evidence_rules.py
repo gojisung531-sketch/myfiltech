@@ -344,10 +344,10 @@ def test_existing_fire_positive_and_explicit_nonofficial_branches_remain(
     assert rules.evaluate(req, ctx).verdict == expected
 
 
-def test_generated_submission_and_supported_certificate_still_met(ctx):
+def test_self_issued_readiness_unknown_but_supported_certificate_still_met(ctx):
     assert (
         rules.evaluate(requirement("SUBMISSION_DOC", {"doc": "치수 외관검사 성적서"}), ctx).verdict
-        == "MET"
+        == "NEEDS_CONFIRMATION"
     )
     ctx.certificates = [Certificate(pk=1, cert_type="ISO9001", valid_until=date(2027, 1, 1))]
     assert (
