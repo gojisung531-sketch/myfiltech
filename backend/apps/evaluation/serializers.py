@@ -1,6 +1,8 @@
 from rest_framework import serializers
 
-from .evidence import evidence_document_map
+from apps.documents.locations import locator_for
+
+from .evidence import evidence_document_map, stored_evidence_locations
 from .models import EvaluationHistory, RequirementEvaluation, RiskLevel, Verdict
 
 
@@ -74,6 +76,11 @@ class EvaluationSerializer(serializers.ModelSerializer):
             doc_map = evidence_document_map([instance.evidences])
         for evidence in data.get("evidences") or []:
             evidence["document_id"] = doc_map.get((evidence.get("type"), evidence.get("id")))
+        locations = stored_evidence_locations(
+            instance.evidences, doc_map, locator_for(self.context)
+        )
+        for evidence, location in zip(data.get("evidences") or [], locations, strict=True):
+            evidence["source_location"] = location
         return data
 
 

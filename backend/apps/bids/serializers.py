@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.company.models import Product
+from apps.documents.locations import locator_for
 from apps.evaluation.context import reference_date
 from apps.evaluation.models import RequirementEvaluation
 from apps.evaluation.serializers import EvaluationSerializer
@@ -243,6 +244,7 @@ class BidItemSerializer(serializers.ModelSerializer):
 
 
 class BidRequirementSerializer(serializers.ModelSerializer):
+    source_location = serializers.SerializerMethodField()
     category_label = serializers.CharField(source="get_category_display", read_only=True)
     item_label = serializers.SerializerMethodField()
     source_attachment_name = serializers.CharField(
@@ -266,6 +268,7 @@ class BidRequirementSerializer(serializers.ModelSerializer):
             "source_attachment_name",
             "source_page",
             "source_quote",
+            "source_location",
             "order",
             "source",
             "is_locked",
@@ -275,6 +278,9 @@ class BidRequirementSerializer(serializers.ModelSerializer):
 
     def get_item_label(self, obj) -> str | None:
         return str(obj.item) if obj.item_id else None
+
+    def get_source_location(self, obj):
+        return locator_for(self.context).requirement(obj)
 
     def validate_normalized(self, value):
         if not isinstance(value, dict):
@@ -305,5 +311,9 @@ class RequirementWithEvaluationSerializer(BidRequirementSerializer):
         if evaluation is None:
             return None
         return EvaluationSerializer(
-            evaluation, context={"doc_map": self.context.get("doc_map")}
+            evaluation,
+            context={
+                "doc_map": self.context.get("doc_map"),
+                "source_locator": locator_for(self.context),
+            },
         ).data

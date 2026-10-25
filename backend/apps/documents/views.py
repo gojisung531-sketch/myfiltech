@@ -14,6 +14,7 @@ from apps.core.jobs import enqueue
 from apps.core.permissions import IsAdminRole, ReadAnyWriteAdmin
 from apps.core.serializers import JobSerializer
 
+from .locations import SourceLocator, text_digest
 from .models import Document, DocumentMetadata, MetadataSchema
 from .pipeline import STEPS
 from .serializers import (
@@ -192,8 +193,34 @@ class DocumentViewSet(
                 "pages": text.split("\f") if text else [],
                 "page_count": document.page_count,
                 "tables": document.extracted_tables,
+                "extracted_text": text,
+                "text_sha256": text_digest(text),
+                "pages_kind": "PDF_TEXT_SEGMENTS"
+                if document.file_format == "PDF"
+                else "EXTRACTION_CHUNKS_NOT_PHYSICAL_PAGES",
             }
         )
+
+    @action(detail=True, methods=["get"])
+    def locate(self, request, pk=None):
+        """Compare a quote without extraction, persistence, or choosing ambiguous hits."""
+        document = self.get_object()
+        quote = request.query_params.get("quote", "")
+        if len(quote) > 8000:
+            raise ValidationError({"quote": ["인용문은 8000자 이내여야 합니다."]})
+        page = request.query_params.get("page")
+        if page is not None:
+            try:
+                page = int(page)
+                if page < 1:
+                    raise ValueError
+            except ValueError as exc:
+                raise ValidationError(
+                    {"page": ["물리 PDF 페이지는 1 이상의 정수여야 합니다."]}
+                ) from exc
+        locator = SourceLocator()
+        locator.documents[document.pk] = document
+        return Response(locator.locate(document.pk, quote, page=page))
 
     @action(detail=True, methods=["post"], permission_classes=[IsAdminRole])
     def reprocess(self, request, pk=None):

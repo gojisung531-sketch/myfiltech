@@ -229,3 +229,22 @@ def evidence_document_map(evidence_lists) -> dict[tuple[str, int], int]:
             if document_id:
                 result[(kind, pk)] = document_id
     return result
+
+
+def stored_evidence_locations(evidences, doc_map, locator):
+    """Resolve only saved references/quotes. Never substitute today's company metadata."""
+    result = []
+    for evidence in evidences or []:
+        explicit = evidence.get("document_id")
+        document_id = explicit or doc_map.get((evidence.get("type"), evidence.get("id")))
+        location = locator.locate(
+            document_id,
+            evidence.get("quote") or "",
+            page=evidence.get("page"),
+            role="STORED_EVALUATION_EVIDENCE",
+        )
+        location["saved_reference"] = {"type": evidence.get("type"), "id": evidence.get("id")}
+        location["document_binding"] = "SAVED_DOCUMENT_ID" if explicit else "CURRENT_RECORD_LINK"
+        location["historical_source_snapshot_verified"] = False
+        result.append(location)
+    return result

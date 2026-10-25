@@ -1,3 +1,36 @@
+# 백엔드 인수인계 — Backend B6B
+
+- 상태: **B6B 완료, 여기서 중단** (2026-10-26, Asia/Seoul). 위치 연결 API만 추가. **공고2 요구조건37개: 저장 HWP 텍스트의 단일 위치35(동일32·공백 차이3), 인용 불일치1(req14), 스캔 PDF 물리쪽만 확인1(req6)**. 인용/페이지를 추정하거나 저장 인용을 수정하지 않았다. HWP의 실제 쪽/원본 문단은 미확인이다.
+- 회사 근거: B6A **인증21건의 필드별 위치171개**, 회사 **11필드의 위치13개**를 기존 수동 메타데이터에서 재사용. 원본 SHA와 실제 PDF 물리쪽 범위를 대조했으며 스캔 인용의 자동 문자 일치/강조 좌표는 미확인으로 구분. 새 인증서를 과거 판정에 소급 추가한 건수0.
+- 남은 후보: 저장 판정 evidence **71개=공고 인용37+기존 제품 참고34**. 제품 참고34개는 제품2개의 카탈로그 **문서10/p3에서 인용별 후보2곳**이므로 MULTIPLE_MATCHES; 하나를 임의 선택하지 않음. 공고 인용은 위35개 단일 연결, req14 불일치, req6 PAGE_ONLY. Excel은 원본 **품목명세서!B5·B6**를 별도 읽기 위치 조회로 확인했으며 요구조건/제품 연결을 변경하지 않았다.
+- 검사: **17 passed**(새 위치검사14 + 기존 조회/회사/인증 회귀3), 외부 Python socket 시도0. **최종 실제 읽기64건 모두200**, 기존 API6종의 모든 기존 필드/중첩값 일치·반복 GET 무부작용 확인. **DB public39테이블 전부 시작 해시와 동일**, 기존 미디어27개·기업 원본18개·.env SHA 동일. Django check 문제0, migration 변경0, 변경 Python ruff check/format 및 git diff --check 통과.
+- 기준: 깨끗한 **`c00a039`**, `feature/backend-foundation`. 완료 커밋은 **이 기록을 포함한 HEAD** — `feat(backend): expose verified evidence locations without revising results`. 수정은 backend/**와 이 파일뿐. 프런트/원본/팀 노션/키/배포 설정·다른 worktree·push 변경 없음.
+
+## 제공 API와 프런트 계약
+
+- `apps/documents/locations.py`가 요청별 캐시로 읽기 대조만 한다. **재추출/OCR·재판정·초안 재생성·LLM·전체 워커·DB 저장 모두0**. 파일 SHA가 달라지거나 없으면 위치를 확정하지 않고 SOURCE_CHANGED/UNAVAILABLE 등으로 반환한다. 공백 차이만 허용하며 문장부호·단어·페이지를 교정하지 않는다. 공백 표현이 다른 중복도 전부 찾아 MULTIPLE_MATCHES로 남긴다.
+- 요구조건 목록/상세에 **source_location**, 기존 판정 **evidences[].source_location** 추가. Company/Certificate에 **evidence_locations** 추가. 비교표에 요구조건 출처·저장 근거·현재 회사 위치를 별도로 추가하고 인증별 **SAVED_ID_REFERENCE / CURRENT_REFERENCE_ONLY** 관계를 명시한다. 기존 type/id/page/quote/document_id·응답 필드·권한은 보존했다.
+- 새 읽기 전용 **GET `/api/documents/{id}/locate?quote=...&page=...`**는 실제 PDF쪽·원본 Excel 셀·저장 추출 텍스트의 일치를 조회한다. **GET `/text`**는 기존 pages/page_count/tables를 유지하며 전체 **extracted_text / text_sha256 / pages_kind**를 추가한다. 새 공개 파일 경로나 로컬 기업자료 경로를 노출하지 않는다.
+- 공통 결과는 문서·원본 SHA·역할·원 인용·위치 종류/값·대조 상태·모든 후보를 제공한다. **PDF_PAGE / SPREADSHEET_CELL / EXTRACTED_TEXT_RANGE / NONE**을 구분. 단일 연결에만 location_value를 주고 다중 후보는 null. PDF 스캔의 MANUAL_REVIEWED_PAGE/PAGE_ONLY와 인용 자동 일치 상태를 분리한다.
+- HWP는 저장 추출 문자열의 Unicode code point start/end(끝 제외)·JS용 UTF-16 오프셋·텍스트 SHA·행/구획·근처 번호형 텍스트를 제공한다. 구획/번호형 행은 추출 텍스트 맥락이며 **원본 HWP section/paragraph ID는 null**. PAGE 표지는 원문 문자열로만 보존하고 물리쪽으로 쓰지 않는다. Excel은 실제 원본 시트·A1 셀을 사용해 빈 행 제거 후의 표 인덱스를 좌표로 오인하지 않는다. 수식 실행/재계산 없음.
+- **프런트 이동·강조 계약/상태표/합성 예시: `backend/docs/evidence-locations-b6b.md`**. text_sha 확인 후 전체 extracted_text에 오프셋을 적용한다. PDF는 인증된 원본 바이트를 받아 물리쪽을 열며 bbox/OCR 강조는 제공하지 않는다. 다중 후보는 사용자 선택, 불일치는 경고와 원본 열기로 처리한다. 실제 브라우저/HWP 원본 뷰어 이동 구현·검증은 하지 않았다.
+
+## 실제 대조·제한과 보존
+
+- req14 저장 인용에는 원문 추출 텍스트의 따옴표가 빠져 연속 문자열이 일치하지 않는다. **QUOTE_NOT_FOUND**와 저장 인용을 그대로 반환. req6 원본 물리1쪽은 이번에 직접 시각 확인했으나 저장 텍스트가 없는 스캔이라 API는 **PAGE_ONLY / quote_status=NOT_CHECKED**. 새로운 OCR/대체 인용/확정 강조 좌표를 만들지 않았다.
+- 인증서별 번호 해시 메타데이터와 원본 key/SHA를 확인해 페이지를 연결한다. 통합 증서5건은 각각 물리1~5쪽, 공동 특허·직접생산·기술마켓·원산지의 복수쪽 근거도 보존. **171+13개 전부 MANUAL_REVIEWED_PAGE**이고 자동 인용 대조로 보고하지 않는다. 회사/증서 현재 값과 검토 당시 값의 차이는 record_value_consistency로 구분하며 전체 자료 변경 감지/결과 오래됨 표시를 구현한 것은 아니다.
+- 저장 evidence는 **저장 type/id/page/quote만** 연결한다. 원본 ID 스냅샷이 없는 기존 근거는 CURRENT_RECORD_LINK 및 **historical_source_snapshot_verified=false**를 명시해 현재 원본 연결과 과거 당시 원본 동일성을 구분한다. 새 수동 메타데이터로 저장 근거를 채우지 않는다. 실제 비교표의 신규 인증 참고 **ID18·17은 CURRENT_REFERENCE_ONLY**, 저장 인증 evidence는 계속0.
+- 기존 요구조건·판정37/이력45·초안4·관리대장151(PENDING151)·회사/인증/제품/수동 원본 연결·설정/키/프롬프트/인증 기록까지 **39테이블 전체 불변**. Job **1·2=PENDING / attempts0 / started_at null** 유지. 품목1 수동 제품1 연결·품목2 미연결 유지. 기존 공고 결과/초안 GET도 저장값 그대로 대조했으며 회사자료로 갱신됐다고 보고하지 않는다.
+- 비공개 증거는 **`backend/.venv/b6b/`**: `db-before.json`, `context-before-private.json`, `files-before.json`, 기존 응답 `legacy-http-before-private.json`, 최종 **`final-preservation-verification.json`, `final-db-after-final.json`, `final-http-verification.json`, `final-http-responses-private.json`, `final-location-audit-private.md`**, 검사 요약 `checks.json`. 기업 값/실제 인용/응답·원본 이미지는 Git 제외. B6B는 DB/스키마 변경이 없어 데이터 복원 조작이 필요하지 않다.
+- 실제 API 대조 중 항목형 맥락을 원문 전체 행으로 반환하도록 보완하고, **Django만 총2회 재기동**했다. 같은 cwd/.venv/.env/localhost:8000/--noreload·PDF 런타임 환경 유지. 최종 launcher **21704**, listener **12972**; PostgreSQL **26452/5432**와 프런트 유지. 상시 워커 없음. 최종 소스에 대해 다시 실제 읽기64건/DB·파일 해시 대조를 수행했다.
+
+## 다음 시작점 — B6B 이후 범위
+
+- 프런트는 위 API 계약에 맞춰 원본 열기·물리쪽 이동·셀/텍스트 강조·다중 후보 선택·불일치 안내를 연계할 수 있다. B6B는 백엔드 계약까지이며 프런트를 수정하지 않았다.
+- **HWP 원본 물리쪽/레코드 문단·추출 충실도, 스캔 문자/bbox, req14 인용 정정, 제품 인용 후보 선택, 자료 변경 감지/오래됨 표시는 미완료**. 원문 위치 미확인을 추정으로 메우지 않는다. 저장 판정/초안을 갱신하거나 대기 Job을 실행하려면 별도 단계가 필요하다. **자기 변경만 커밋한 뒤 B6B에서 중단**.
+
+---
+
 # 백엔드 인수인계 — Backend B6A
 
 - 상태: **B6A 완료, 여기서 중단** (2026-10-26, Asia/Seoul). **회사 11필드 반영, 인증 원본17개 등록 → 종류별 정식21건, 정식 보류0건**. 통합 PDF의 발전사 증서5장을 개별 등록했다. 설립일은 연월만 확인돼 정식 날짜 반영 보류, 직원수/G2B 품목 미확인 유지. 기존 판정·초안은 갱신하지 않았다.

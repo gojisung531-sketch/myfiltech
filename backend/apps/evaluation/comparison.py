@@ -1,9 +1,15 @@
 """② 회사 자료 비교 table (specs/05 §3 ②): requirement vs product spec / reports / certs / records."""
 
 from apps.company.models import Certificate, DeliveryRecord, TestReport
+from apps.documents.locations import SourceLocator
 
 from .context import EvaluationContext
-from .evidence import manufacturer_inputs, target_product
+from .evidence import (
+    evidence_document_map,
+    manufacturer_inputs,
+    stored_evidence_locations,
+    target_product,
+)
 from .grades import family_of, product_grades
 
 
@@ -55,12 +61,16 @@ def _report_ref(report) -> dict:
     }
 
 
-def _cert_ref(cert, ctx) -> dict:
+def _cert_ref(cert, ctx, locator, saved_ids) -> dict:
     return {
         "id": cert.pk,
         "label": f"{cert.name or cert.cert_type} {cert.cert_no} (~{cert.valid_until or '?'})",
         "status": cert.status_on(ctx.reference_date, ctx.expiring_days),
         "document_id": cert.source_document_id,
+        "relation_to_evaluation": "SAVED_ID_REFERENCE"
+        if cert.pk in saved_ids
+        else "CURRENT_REFERENCE_ONLY",
+        "evidence_locations": locator.manual_locations(certificate=cert),
     }
 
 
@@ -86,6 +96,7 @@ def _requirement_value(requirement) -> str:
 
 def comparison(bid) -> dict:
     ctx = EvaluationContext.for_bid(bid)
+    locator = SourceLocator()
     reports = {r.pk: r for r in TestReport.objects.all()}
     certs = {c.pk: c for c in Certificate.objects.all()}
     records = {r.pk: r for r in DeliveryRecord.objects.prefetch_related("products")}
@@ -118,7 +129,16 @@ def comparison(bid) -> dict:
         )
 
     rows = []
-    requirements = bid.requirements.select_related("item__matched_product", "evaluation")
+    requirements = list(
+        bid.requirements.select_related(
+            "item__matched_product", "evaluation", "source_attachment__document"
+        )
+    )
+    doc_map = evidence_document_map(
+        getattr(r, "evaluation", None).evidences
+        for r in requirements
+        if getattr(r, "evaluation", None)
+    )
     for requirement in requirements:
         evaluation = getattr(requirement, "evaluation", None)
         product = target_product(requirement, ctx)
@@ -143,6 +163,7 @@ def comparison(bid) -> dict:
                 r.pk for r in ctx.reports_for(product) if not family or r.standard_family == family
             ]
         cert_ids = _evidence_ids(evaluation, "certificate")
+        saved_cert_ids = set(cert_ids)
         if not cert_ids and category == "CERTIFICATION":
             cert_type = (requirement.normalized or {}).get("cert_type")
             cert_ids = [c.pk for c in ctx.certificates if c.cert_type == cert_type]
@@ -175,7 +196,24 @@ def comparison(bid) -> dict:
                 "comparison_trace": evaluation.rule_trace if evaluation else {},
                 "rationale": evaluation.rationale if evaluation else "",
                 "test_reports": [_report_ref(reports[i]) for i in report_ids if i in reports],
-                "certificates": [_cert_ref(certs[i], ctx) for i in cert_ids if i in certs],
+                "certificates": [
+                    _cert_ref(certs[i], ctx, locator, saved_cert_ids)
+                    for i in cert_ids
+                    if i in certs
+                ],
+                "source_location": locator.requirement(requirement),
+                "stored_evidence_locations": stored_evidence_locations(
+                    evaluation.evidences if evaluation else [], doc_map, locator
+                ),
+                "current_company_locations": [
+                    location
+                    for location in locator.manual_locations(company=ctx.company)
+                    if category == "CERTIFICATION"
+                    and set(location["fields"])
+                    & {"is_sme", "sme_cert_valid_until", "g2b_registered_items"}
+                ],
+                "stored_evaluation_updated_at": str(evaluation.updated_at) if evaluation else None,
+                "current_references_revise_stored_evaluation": False,
                 "delivery_records": [_record_ref(records[i]) for i in record_ids if i in records],
                 "verdict": evaluation.verdict if evaluation else None,
                 "risk_level": evaluation.risk_level if evaluation else None,
