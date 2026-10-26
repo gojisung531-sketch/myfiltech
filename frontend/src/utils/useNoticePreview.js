@@ -54,7 +54,7 @@ function fromInput(field, value) {
   if (isBlank(value)) return null
   if (field.type === 'number') {
     const n = Number(value)
-    return Number.isFinite(n) ? n : null
+    return Number.isFinite(n) && n >= 0 ? Math.round(n) : null
   }
   if (field.type === 'datetime') {
     const v = String(value)
@@ -186,12 +186,13 @@ export function useNoticePreview(sourceText) {
     const out = { ...shown.value.values }
     const editedKeys = []
     for (const f of FIELDS) {
-      if (edited[f.key]) {
-        editedKeys.push(f.key)
-        const v = fromInput(f, vals[f.key])
-        if (v === null) delete out[f.key]
-        else out[f.key] = v
-      }
+      if (!edited[f.key]) continue
+      const v = fromInput(f, vals[f.key])
+      // 건명은 비울 수 없다 → 비우면 수정으로 보내지 않는다(자동값 또는 기존 입력 규칙 유지).
+      if (f.key === 'title' && v === null) continue
+      editedKeys.push(f.key)
+      // 지우려면 값을 보내고 수정 항목에 표시해야 한다(텍스트 '', 금액·일시 null).
+      out[f.key] = v === null ? (f.type === 'number' || f.type === 'datetime' ? null : '') : v
     }
     return { source_sha256: shown.value.sha, values: out, edited_fields: editedKeys }
   }

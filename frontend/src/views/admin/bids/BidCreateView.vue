@@ -26,7 +26,11 @@ const reading = computed(() => ['waiting', 'loading'].includes(meta.status.value
 const canSubmit = computed(() => hasInput.value && !reading.value)
 
 const warningsFor = (key) => (meta.shown.value?.warnings || []).filter((w) => w.field === key)
-const generalWarnings = computed(() => (meta.shown.value?.warnings || []).filter((w) => !w.field))
+const KNOWN = new Set([...PRIMARY_FIELDS, ...EXTRA_FIELDS].map((f) => f.key))
+// 입력칸이 없는 항목(예: 공고일시·부가세 미지원 경고)은 전체 안내로 보여 준다.
+const generalWarnings = computed(() =>
+  (meta.shown.value?.warnings || []).filter((w) => !w.field || !KNOWN.has(w.field)),
+)
 const quoteFor = (key) => (meta.current.value ? meta.shown.value.evidence?.[key]?.quote || '' : '')
 const autoFilled = (key) =>
   meta.current.value &&
