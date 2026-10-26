@@ -4,6 +4,7 @@ from apps.company.models import Certificate, DeliveryRecord, TestReport
 from apps.core.freshness import FreshnessReader
 from apps.documents.locations import SourceLocator
 
+from .assessment import input_requests, saved_assessment, summary
 from .context import EvaluationContext
 from .evidence import (
     evidence_document_map,
@@ -12,6 +13,7 @@ from .evidence import (
     target_product,
 )
 from .grades import family_of, product_grades
+from .models import RequirementEvaluation
 
 
 def _num(value) -> str:
@@ -239,6 +241,7 @@ def comparison(bid) -> dict:
             )
         }
         row["stored_result"]["freshness"] = row["freshness"]
+        row["stored_result"]["assessment"] = saved_assessment(evaluation)
         row["current_reference"] = {
             key: row[key]
             for key in (
@@ -259,4 +262,8 @@ def comparison(bid) -> dict:
         "rows": rows,
         "freshness": freshness.evaluations(bid.pk),
         "legacy_flat_fields_mix_time_contexts": True,
+        "input_requests": input_requests(
+            RequirementEvaluation.objects.filter(requirement__bid=bid)
+        ),
+        "assessment_summary": summary(RequirementEvaluation.objects.filter(requirement__bid=bid)),
     }

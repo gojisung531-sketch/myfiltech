@@ -76,6 +76,7 @@ class RequirementEvaluation(TimeStampedModel):
         "evidences",
         "decided_by",
         "analysis_run_id",
+        "rule_trace",
     ]
 
     def snapshot(self) -> dict:

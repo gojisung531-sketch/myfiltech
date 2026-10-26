@@ -11,6 +11,7 @@ from apps.llm.providers import LLMError
 from apps.llm.services import LLMNotConfigured, is_llm_configured, run_task
 
 from . import rules
+from .assessment import supplement
 from .context import EvaluationContext
 from .evidence import company_evidence, product_evidence
 from .formal_sources import catalog, rule_with_formal_sources, validate_judgment
@@ -182,7 +183,9 @@ def _llm_evidences(out: dict) -> list[dict]:
 def merge(requirement, result: rules.RuleResult | None, out: dict | None) -> dict:
     """Combine rule and LLM output. A rule verdict is never changed by the LLM."""
     if result and (
-        result.trace.get("interpretation_review") or result.trace.get("selection_status")
+        result.trace.get("interpretation_review")
+        or result.trace.get("selection_status")
+        or result.trace.get("assessment")
     ):
         out = None  # A generated answer must not hide a reviewed ambiguity/candidate limitation.
     quote = bid_quote(requirement)
@@ -399,6 +402,8 @@ def evaluate_bid(
                 continue
             try:
                 result = rules.evaluate(requirement, ctx)
+                if result is not None:
+                    result = supplement(requirement, result, ctx)
                 if formal_sources:
                     result = rule_with_formal_sources(requirement, result, ctx)
             except Exception:  # a broken rule must not stop the whole bid
@@ -417,7 +422,11 @@ def evaluate_bid(
         for start in range(0, len(pending), size):
             batch = pending[start : start + size]
             outs, call_log = ({}, None)
-            judge_batch = [(req, rr) for req, rr in batch if rr is None] if rules_first else batch
+            judge_batch = [
+                (req, rr)
+                for req, rr in batch
+                if rr is None or (not rules_first and not rr.trace.get("assessment"))
+            ]
             if use_llm and judge_batch:
                 report(10 + int(80 * done / max(1, len(pending))), "LLM 판정 중")
                 if formal_sources:
@@ -491,6 +500,12 @@ def revert_evaluation(evaluation: RequirementEvaluation, user) -> RequirementEva
     if last_ai is None:
         raise ValueError("되돌릴 자동 판정 기록이 없습니다.")
     evaluation.analysis_run_id = last_ai.snapshot.get("analysis_run_id")
+    if "rule_trace" not in last_ai.snapshot:
+        evaluation.rule_trace = (
+            evaluation.analysis_run.outputs.get(str(evaluation.pk), {}).get("rule_trace", {})
+            if evaluation.analysis_run_id
+            else {}
+        )
     for name, value in last_ai.snapshot.items():
         setattr(evaluation, name, value)
     evaluation.is_modified = False

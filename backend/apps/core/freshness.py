@@ -46,6 +46,8 @@ ENGINE_FILES = [
     "apps/evaluation/grades.py",
     "apps/evaluation/evidence.py",
     "apps/evaluation/formal_sources.py",
+    "apps/evaluation/assessment.py",
+    "apps/evaluation/models.py",
     "apps/evaluation/service.py",
     "apps/drafts/generators.py",
     "apps/drafts/service.py",
@@ -173,7 +175,7 @@ def _capture(bid_id, kind):
     keys = [
         k
         for k in APP_SETTING_DEFAULTS
-        if k.startswith(("evaluation.", "matching.", "report.", "llm.max_input_chars"))
+        if k.startswith(("evaluation.", "matching.", "report.", "company.", "llm.max_input_chars"))
     ]
     stored = dict(AppSetting.objects.filter(key__in=keys).values_list("key", "value"))
     model_ids = LLMSettings.objects.exclude(active_model=None).values_list(

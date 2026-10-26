@@ -1283,6 +1283,11 @@ RULES = {
 def evaluate(requirement, ctx: EvaluationContext) -> RuleResult | None:
     if (requirement.normalized or {}).get("placeholder"):
         return evaluate_placeholder(requirement, ctx)
+    from .assessment import evaluate as revalidate
+
+    resolved = revalidate(requirement, ctx)
+    if resolved is not None:
+        return resolved
     review = (requirement.normalized or {}).get("interpretation_review") or {}
     candidates = candidate_products(requirement, ctx)
     if review.get("status") == NEEDS_CONFIRMATION:

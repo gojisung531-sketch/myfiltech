@@ -100,6 +100,9 @@ def rule_with_formal_sources(requirement, result, ctx):
     if not kind or kind == "G2B_ITEM":
         return result
     certs = [c for c in catalog(ctx)["certificates"] if c["cert_type"] == kind]
+    used = result.trace.get("assessment", {}).get("certificate_ids_used")
+    if used is not None:
+        certs = [c for c in certs if c["id"] in used]
     if not certs:
         return result
     refs = [r for c in certs for r in certificate_refs(c)]

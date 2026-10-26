@@ -3,6 +3,7 @@ from rest_framework import serializers
 from apps.core.freshness import reader_for
 from apps.documents.locations import locator_for
 
+from .assessment import saved_assessment
 from .evidence import evidence_document_map, stored_evidence_locations
 from .models import EvaluationHistory, RequirementEvaluation, RiskLevel, Verdict
 
@@ -17,6 +18,10 @@ class EvidenceSerializer(serializers.Serializer):
 
 class EvaluationSerializer(serializers.ModelSerializer):
     freshness = serializers.SerializerMethodField()
+    assessment = serializers.SerializerMethodField()
+
+    def get_assessment(self, obj):
+        return saved_assessment(obj)
 
     def get_freshness(self, obj):
         return reader_for(self.context).result(obj)
@@ -59,6 +64,7 @@ class EvaluationSerializer(serializers.ModelSerializer):
             "modified_at",
             "updated_at",
             "freshness",
+            "assessment",
         ]
         read_only_fields = [
             "id",
