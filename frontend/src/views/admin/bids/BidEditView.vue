@@ -5,12 +5,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { deleteBid, extractBid, getBid, updateBid } from '@/api/bids'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import EntityForm from '@/components/EntityForm.vue'
-import JobProgress from '@/components/JobProgress.vue'
 import { useToastStore } from '@/stores/toast'
 import { errorMessage } from '@/utils/errors'
 import { PROCESSING_STATUS_VARIANT, toLocalInput } from '@/utils/format'
 import { BID_OUTCOMES } from '@/utils/options'
 
+import BidActiveJobs from './BidActiveJobs.vue'
 import BidAttachmentsTab from './BidAttachmentsTab.vue'
 import BidDeleteModal from './BidDeleteModal.vue'
 import BidFitCard from './BidFitCard.vue'
@@ -74,7 +74,15 @@ const bid = ref(null)
 const form = ref(null)
 const formRef = ref(null)
 const saving = ref(false)
-const jobId = ref(null)
+const jobsRef = ref(null)
+const jobsBusy = ref(true) // 이 공고의 대기·실행 작업이 있거나 아직 확인하지 못함
+const starting = ref(false) // 추출 요청 전송 중(연타 방지)
+const extractBlocked = computed(
+  () =>
+    starting.value ||
+    jobsBusy.value ||
+    ['EXTRACTING', 'EVALUATING'].includes(bid.value?.processing_status),
+)
 const deleting = ref(null)
 const tab = computed(() => route.query.tab || 'meta')
 const bidId = computed(() => Number(route.params.id))
@@ -138,23 +146,31 @@ function askExtract() {
 
 async function runExtract() {
   confirmExtract.value = false
+  if (extractBlocked.value) return
+  starting.value = true
   try {
     const res = await extractBid(bidId.value)
-    jobId.value = res.job_id
+    jobsRef.value?.track(res.job_id, 'EXTRACT_BID')
     bid.value.processing_status = 'EXTRACTING'
     bid.value.processing_status_label = '추출 중'
   } catch (err) {
     if (err.response?.data?.code !== 'llm_not_configured') toast.error(errorMessage(err))
+  } finally {
+    starting.value = false
   }
 }
 
-async function onExtractDone(job) {
-  jobId.value = null
-  if (job.status === 'SUCCEEDED') {
-    const r = job.result
+// 서버가 종료 상태를 돌려준 작업만 여기로 온다(추출·후속 판정 공통).
+async function onJobDone(job) {
+  const r = job.result || {}
+  if (job.status === 'SUCCEEDED' && job.type === 'EXTRACT_BID') {
     toast.success(`추출 완료: 품목 ${r.items}개, 요구사항 ${r.requirements}건`)
+  } else if (job.status === 'SUCCEEDED') {
+    toast.success('판정 완료')
   } else if (job.status === 'FAILED') {
-    toast.error(job.error || '추출에 실패했습니다.')
+    toast.error(job.error || '작업에 실패했습니다.')
+  } else if (job.status === 'CANCELLED') {
+    toast.error('작업이 취소되었습니다.')
   }
   await load()
 }
@@ -188,11 +204,7 @@ const fieldLabel = (key) => FIELDS.find((f) => f.key === key)?.label || key
         <router-link :to="`/bids/${bid.id}`" class="btn btn-sm btn-outline-secondary">
           담당자 화면
         </router-link>
-        <button
-          class="btn btn-sm btn-primary"
-          :disabled="!!jobId || ['EXTRACTING', 'EVALUATING'].includes(bid.processing_status)"
-          @click="askExtract"
-        >
+        <button class="btn btn-sm btn-primary" :disabled="extractBlocked" @click="askExtract">
           <i class="bi bi-magic me-1"></i>추출 실행
         </button>
         <button class="btn btn-sm btn-outline-danger" @click="deleting = bid">삭제</button>
@@ -204,12 +216,13 @@ const fieldLabel = (key) => FIELDS.find((f) => f.key === key)?.label || key
 
       <BidProgressSteps :bid="bid" />
 
-      <div v-if="jobId" class="card mb-3">
-        <div class="card-body">
-          <JobProgress :job-id="jobId" label="공고 추출" @done="onExtractDone" />
-        </div>
-      </div>
-      <div v-else-if="bid.processing_status === 'FAILED'" class="alert alert-danger small">
+      <BidActiveJobs
+        ref="jobsRef"
+        :bid-id="bidId"
+        @update:busy="jobsBusy = $event"
+        @done="onJobDone"
+      />
+      <div v-if="bid.processing_status === 'FAILED' && !jobsBusy" class="alert alert-danger small">
         <strong>처리 실패:</strong> {{ bid.processing_error || '원인을 확인할 수 없습니다.' }}
       </div>
       <div v-else-if="bid.processing_status === 'DRAFT'" class="small text-muted mb-3">
