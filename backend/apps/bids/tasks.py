@@ -28,6 +28,10 @@ def extract_bid_job(job, report):
         and has_handler("EVALUATE_BID")
     ):
         result["evaluate_job_id"] = enqueue(
-            "EVALUATE_BID", target=bid, payload={"keep_modified": True}, user=job.created_by
+            "EVALUATE_BID",
+            target=bid,
+            payload={"keep_modified": True, "parent_job_id": job.pk},
+            user=job.created_by,
+            run_inline=False,
         ).pk
     return result
