@@ -129,6 +129,7 @@ class AttachmentSerializer(serializers.ModelSerializer):
 
 
 class BidDetailSerializer(BidListSerializer):
+    notice_metadata = serializers.SerializerMethodField()
     attachments = AttachmentSerializer(many=True, read_only=True)
     locked_fields = serializers.ListField(read_only=True)
     fit_breakdown = serializers.SerializerMethodField()
@@ -150,6 +151,7 @@ class BidDetailSerializer(BidListSerializer):
             "reference",
             "modified_evaluation_count",
             "source_text",
+            "notice_metadata",
             "attachments",
             "locked_fields",
             "updated_at",
@@ -157,6 +159,9 @@ class BidDetailSerializer(BidListSerializer):
 
     def get_fit_breakdown(self, obj) -> dict:
         return (obj.extra or {}).get("fit_breakdown") or {}
+
+    def get_notice_metadata(self, obj) -> dict | None:
+        return (obj.extra or {}).get("pasted_notice_metadata")
 
     def get_placeholders(self, obj) -> list:
         return (obj.extra or {}).get("placeholders") or []
