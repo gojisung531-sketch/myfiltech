@@ -27,7 +27,7 @@ export const EXTRA_FIELDS = [
   { key: 'procurement_type', label: '조달 구분', col: 'col-md-6' },
   { key: 'item_category_code', label: '물품분류번호', col: 'col-md-6' },
   { key: 'item_category_name', label: '물품분류명', col: 'col-md-6' },
-  { key: 'delivery_terms', label: '납품기한', col: 'col-md-6' },
+  { key: 'delivery_terms', label: '납품조건', col: 'col-md-6' },
   { key: 'delivery_place', label: '납품장소', col: 'col-md-6' },
   { key: 'warranty_terms', label: '하자보증', col: 'col-md-6' },
   { key: 'summary', label: '요약', type: 'textarea', col: 'col-12' },

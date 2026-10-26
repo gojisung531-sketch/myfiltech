@@ -194,7 +194,7 @@ const summarySections = computed(() => {
       key: 'contract',
       title: '계약 조건',
       facts: [
-        ['납품기한', dash(b.delivery_terms)],
+        ['납품조건', dash(b.delivery_terms)],
         ['납품장소', dash(b.delivery_place)],
         ['하자보증', dash(b.warranty_terms)],
       ],

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { createBid } from '@/api/bids'
@@ -50,6 +50,16 @@ const missingNames = computed(() =>
     .filter((f) => !meta.vals[f.key] && PRIMARY_FIELDS.includes(f))
     .map((f) => f.label),
 )
+// 읽기 결과가 없어 등록에 실리지 않는 직접 수정 항목(공고명은 별도 입력으로 항상 전달된다).
+const lostEdits = computed(() =>
+  meta.current.value
+    ? []
+    : [...PRIMARY_FIELDS, ...EXTRA_FIELDS]
+        .filter((f) => f.key !== 'title' && meta.edited[f.key])
+        .map((f) => f.label),
+)
+const confirmLoss = ref(false) // 수정 항목이 저장되지 않음을 사용자가 확인하는 중
+watch([lostEdits, sourceText], () => (confirmLoss.value = false))
 const fileKey = (f) => `${f.name}|${f.size}|${f.lastModified}`
 
 // 이름이 같아도 크기·수정시각이 다르면 다른 파일로 보고 모두 유지한다.
@@ -65,8 +75,13 @@ function addFiles(picked) {
   }
 }
 
-async function submit() {
+async function submit(force = false) {
   if (saving.value || !canSubmit.value) return
+  if (lostEdits.value.length && force !== true) {
+    // 수정한 값이 요청에서 빠지는 채로 조용히 등록하지 않는다.
+    confirmLoss.value = true
+    return
+  }
   error.value = ''
   failedFiles.value = []
   saving.value = true
@@ -127,7 +142,7 @@ async function submit() {
       </div>
     </div>
 
-    <form v-else class="card" @submit.prevent="submit">
+    <form v-else class="card" @submit.prevent="submit()">
       <div class="card-body">
         <div class="mb-3">
           <label class="form-label small" for="bid-text">공고 본문 붙여넣기</label>
@@ -182,6 +197,14 @@ async function submit() {
               입력한 본문·파일·수정한 값은 그대로입니다. 다시 읽기를 누르거나, 읽지 않고 그대로
               등록할 수 있습니다(이 경우 자동 읽은 기본 정보는 저장되지 않습니다).
             </div>
+          </div>
+          <div
+            v-if="lostEdits.length && !meta.current.value"
+            class="alert alert-info small py-2"
+            role="status"
+          >
+            직접 수정한 항목({{ lostEdits.join(', ') }})은 본문 읽기 결과가 있어야 등록에
+            포함됩니다. 지금 읽기 결과가 없어 이대로 등록하면 이 항목들은 저장되지 않습니다.
           </div>
           <ul v-if="generalWarnings.length" class="small text-warning-emphasis ps-3 mb-2">
             <li v-for="(w, i) in generalWarnings" :key="i">{{ w.message }}</li>
@@ -271,6 +294,36 @@ async function submit() {
             <strong>추출 실행</strong>에서 별도로 진행합니다.
           </p>
         </details>
+        <div
+          v-if="confirmLoss && lostEdits.length"
+          class="alert alert-warning small mt-3 mb-0"
+          role="alert"
+        >
+          <strong>수정한 항목이 저장되지 않습니다.</strong>
+          <div class="mt-1">{{ lostEdits.join(', ') }}</div>
+          <div class="mt-1">
+            본문 읽기 결과가 없어 이 값들은 등록 요청에 포함되지 않습니다. 본문·파일(과 공고명)만
+            등록되며, 등록 후 편집 화면에서 다시 입력해야 합니다.
+          </div>
+          <div class="d-flex flex-wrap gap-2 mt-2">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary"
+              :disabled="!meta.canRead() || reading"
+              @click="meta.retry()"
+            >
+              다시 읽기 (성공하면 수정값 포함)
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm btn-warning"
+              :disabled="saving"
+              @click="submit(true)"
+            >
+              수정 항목 없이 등록
+            </button>
+          </div>
+        </div>
         <div v-if="error" class="alert alert-danger small mt-3 mb-0" role="alert">
           <div>{{ error }}</div>
           <ul v-if="failedFiles.length" class="mb-0 mt-1">

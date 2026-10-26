@@ -51,7 +51,7 @@ const FIELDS = [
   { key: 'bid_close_at', label: '입찰 마감', type: 'datetime', col: 'col-md-3' },
   { key: 'opening_at', label: '개찰', type: 'datetime', col: 'col-md-3' },
   { key: 'qualification_deadline_at', label: '자격 등록 마감', type: 'datetime', col: 'col-md-3' },
-  { key: 'delivery_terms', label: '납품기한', col: 'col-md-4' },
+  { key: 'delivery_terms', label: '납품조건', col: 'col-md-4' },
   { key: 'delivery_place', label: '납품장소', col: 'col-md-4' },
   { key: 'warranty_terms', label: '하자보증', col: 'col-md-4' },
   { key: 'buyer_contact', label: '수요기관 담당자', type: 'json', rows: 3, empty: {} },
