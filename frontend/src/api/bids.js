@@ -9,13 +9,22 @@ export const updateBid = (id, payload) => client.patch(`/bids/${id}`, payload).t
 export const deleteBid = (id) => client.delete(`/bids/${id}`)
 export const extractBid = (id) => client.post(`/bids/${id}/extract`).then(data)
 
-export const createBid = ({ title, sourceText, files }) => {
+// noticeMetadata(선택): { source_sha256, values, edited_fields } — 기본 정보 미리보기 결과.
+// 생략하면 기존 요청과 동일하다.
+export const createBid = ({ title, sourceText, files, noticeMetadata }) => {
   const form = new FormData()
   form.append('title', title || '')
   form.append('source_text', sourceText || '')
   files.forEach((file) => form.append('files', file))
+  if (noticeMetadata) form.append('notice_metadata', JSON.stringify(noticeMetadata))
   return client.post('/bids', form, multipart).then(data)
 }
+
+// 본문에서 기본 정보만 읽는다(저장·요구조건 분석 없음). signal로 이전 요청을 취소한다.
+export const previewNoticeMetadata = (sourceText, { signal } = {}) =>
+  client
+    .post('/bids/preview-metadata', { source_text: sourceText }, { signal, timeout: 30000 })
+    .then(data)
 
 export const addAttachments = (id, files) => {
   const form = new FormData()
