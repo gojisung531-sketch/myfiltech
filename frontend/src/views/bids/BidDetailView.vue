@@ -10,7 +10,7 @@ import FitScoreBar from '@/components/FitScoreBar.vue'
 import JobProgress from '@/components/JobProgress.vue'
 import { useToastStore } from '@/stores/toast'
 import { errorMessage } from '@/utils/errors'
-import { saveResponse } from '@/utils/download'
+import { downloadFile, PDF_TYPES } from '@/utils/download'
 import { dDay, formatDateTime, formatKrw, PROCESSING_STATUS_VARIANT } from '@/utils/format'
 
 import BidComparisonTab from './BidComparisonTab.vue'
@@ -31,6 +31,7 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToastStore()
 const bid = ref(null)
+const loadError = ref('')
 const jobId = ref(null)
 const refreshKey = ref(0)
 const reviewing = ref(false)
@@ -44,10 +45,13 @@ const busy = computed(
 )
 
 async function load() {
+  loadError.value = ''
   try {
     bid.value = await getBid(bidId.value)
   } catch (err) {
-    toast.error(errorMessage(err))
+    // 헤더를 이미 불러온 뒤의 새로고침 실패는 토스트로, 최초 로딩 실패는 화면에서 재시도하게 한다.
+    if (bid.value) toast.error(errorMessage(err))
+    else loadError.value = errorMessage(err, '공고를 불러오지 못했습니다.')
   }
 }
 onMounted(load)
@@ -85,9 +89,13 @@ async function onJobDone(job) {
 async function downloadReport() {
   downloading.value = true
   try {
-    saveResponse(await downloadReportPdf(bidId.value), 'report.pdf')
+    await downloadFile(() => downloadReportPdf(bidId.value), {
+      types: PDF_TYPES,
+      fallbackName: 'report.pdf',
+      failMessage: '통합 보고서 PDF를 만들지 못했습니다.',
+    })
   } catch (err) {
-    toast.error(errorMessage(err, 'PDF를 만들지 못했습니다.'))
+    toast.error(err.message || 'PDF를 만들지 못했습니다.')
   } finally {
     downloading.value = false
   }
@@ -98,7 +106,7 @@ async function toggleReview() {
   try {
     const reviewed = bid.value.review_status !== 'REVIEWED'
     bid.value = await reviewBid(bidId.value, reviewed)
-    toast.success(reviewed ? '확인 완료로 표시했습니다.' : '확인을 취소했습니다.')
+    toast.success(reviewed ? '검토 완료로 표시했습니다.' : '검토 표시를 취소했습니다.')
   } catch (err) {
     toast.error(errorMessage(err))
   } finally {
@@ -115,7 +123,13 @@ async function onChanged() {
 
 <template>
   <div>
-    <div v-if="!bid" class="text-center py-5"><span class="spinner-border"></span></div>
+    <div v-if="loadError" class="alert alert-danger d-flex align-items-center gap-2" role="alert">
+      <i class="bi bi-exclamation-octagon"></i>
+      <span class="flex-grow-1">{{ loadError }}</span>
+      <button class="btn btn-sm btn-outline-secondary" @click="load">다시 시도</button>
+      <router-link to="/" class="btn btn-sm btn-outline-secondary">목록</router-link>
+    </div>
+    <div v-else-if="!bid" class="text-center py-5"><span class="spinner-border"></span></div>
     <template v-else>
       <div class="card mb-3">
         <div class="card-body">
@@ -127,23 +141,27 @@ async function onChanged() {
                 </router-link>
                 · {{ bid.notice_no || '공고번호 미확인' }} · {{ bid.buyer_org || '-' }}
               </div>
-              <h1 class="h5 mb-1">{{ bid.title }}</h1>
+              <h2 class="h5 mb-1 text-break">{{ bid.title }}</h2>
               <div class="d-flex flex-wrap gap-1">
-                <span v-if="bid.review_status === 'REVIEWED'" class="badge bg-success">
-                  확인 완료 ({{ bid.reviewed_by_name }})
+                <span
+                  v-if="bid.review_status === 'REVIEWED'"
+                  class="badge bg-success"
+                  title="담당자가 검토했다는 표시입니다. 원문과의 일치나 분석 결과의 정답 여부를 검증했다는 뜻은 아닙니다."
+                >
+                  검토 완료 ({{ bid.reviewed_by_name }})
                 </span>
-                <span v-else class="badge bg-light text-dark border">미확인</span>
+                <span v-else class="badge bg-secondary">검토 전</span>
                 <span
                   :class="['badge', `bg-${PROCESSING_STATUS_VARIANT[bid.processing_status]}`]"
                   >{{ bid.processing_status_label }}</span
                 >
-                <span v-if="bid.reference.is_simulation" class="badge bg-secondary">
+                <span v-if="bid.reference.is_simulation" class="badge bg-info">
                   과거 공고 — 오늘({{ bid.reference.date }}) 기준 판정
                 </span>
-                <span v-else class="badge bg-light text-dark border">
+                <span v-else class="badge bg-secondary">
                   판정 기준일 {{ bid.reference.date }}
                 </span>
-                <span v-if="bid.outcome !== 'PENDING'" class="badge bg-light text-dark border">{{
+                <span v-if="bid.outcome !== 'PENDING'" class="badge bg-secondary">{{
                   bid.outcome_label
                 }}</span>
               </div>
@@ -151,16 +169,18 @@ async function onChanged() {
             <div class="d-flex flex-wrap gap-2">
               <button
                 class="btn btn-sm"
-                :class="bid.review_status === 'REVIEWED' ? 'btn-outline-secondary' : 'btn-success'"
+                :class="bid.review_status === 'REVIEWED' ? 'btn-outline-secondary' : 'btn-primary'"
                 :disabled="reviewing"
+                title="담당자 검토 상태만 바꿉니다. 분석·판정 내용은 변경되지 않습니다."
                 @click="toggleReview"
               >
                 <i class="bi bi-check2-circle me-1"></i>
-                {{ bid.review_status === 'REVIEWED' ? '확인 취소' : '확인 완료' }}
+                {{ bid.review_status === 'REVIEWED' ? '검토 표시 취소' : '검토 완료 표시' }}
               </button>
               <button
                 class="btn btn-sm btn-primary"
                 :disabled="busy || !bid.requirement_count"
+                :title="bid.requirement_count ? '' : '저장된 요구사항이 없어 판정할 수 없습니다.'"
                 @click="rerun.show = true"
               >
                 <i class="bi bi-arrow-repeat me-1"></i>판정
@@ -177,21 +197,33 @@ async function onChanged() {
               </button>
             </div>
           </div>
-          <dl class="row small mb-0 mt-3">
-            <dt class="col-sm-2 col-lg-1">입찰 마감</dt>
-            <dd class="col-sm-4 col-lg-3">
-              {{ formatDateTime(bid.bid_close_at) }}
-              <span v-if="bid.bid_close_at" class="text-muted">({{ dDay(bid.bid_close_at) }})</span>
-            </dd>
-            <dt class="col-sm-2 col-lg-1">사업금액</dt>
-            <dd class="col-sm-4 col-lg-3">
-              {{ formatKrw(bid.budget_krw) }}
-              <span class="text-muted">/ 추정 {{ formatKrw(bid.estimated_price_krw) }}</span>
-            </dd>
-            <dt class="col-sm-2 col-lg-1">입찰방법</dt>
-            <dd class="col-sm-4 col-lg-3">{{ bid.bid_method || '-' }}</dd>
-            <dt class="col-sm-2 col-lg-1">적합도</dt>
-            <dd class="col-sm-4 col-lg-3"><FitScoreBar :score="bid.fit_score" /></dd>
+          <dl class="head-facts small mb-0 mt-3">
+            <div>
+              <dt>입찰 마감</dt>
+              <dd>
+                {{ formatDateTime(bid.bid_close_at) }}
+                <span v-if="bid.bid_close_at" class="text-muted"
+                  >({{ dDay(bid.bid_close_at) }})</span
+                >
+              </dd>
+            </div>
+            <div>
+              <dt>사업금액</dt>
+              <dd>
+                {{ formatKrw(bid.budget_krw) }}
+                <span class="text-muted">/ 추정 {{ formatKrw(bid.estimated_price_krw) }}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>입찰방법</dt>
+              <dd class="text-break">{{ bid.bid_method || '-' }}</dd>
+            </div>
+            <div>
+              <dt title="요구사항과 회사 자료를 비교해 계산한 값입니다. 낙찰 확률이 아닙니다.">
+                기술 적합도
+              </dt>
+              <dd><FitScoreBar :score="bid.fit_score" /></dd>
+            </div>
           </dl>
         </div>
       </div>
@@ -207,9 +239,8 @@ async function onChanged() {
       >
         {{ bid.processing_error }}
       </div>
-      <div class="alert alert-light border small py-2">
-        <i class="bi bi-info-circle me-1"></i>판정·답변·초안은 모두 자동 생성된
-        <strong>초안</strong>입니다. 최종 제출 전 담당자가 검토해야 합니다.
+      <div class="small text-muted mb-3">
+        <i class="bi bi-info-circle me-1"></i>자동 생성 초안 — 제출 전 담당자 검토 필요
       </div>
 
       <ul class="nav nav-tabs mb-3">
@@ -280,3 +311,18 @@ async function onChanged() {
     </BaseModal>
   </div>
 </template>
+
+<style scoped>
+.head-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.75rem 1.5rem;
+}
+.head-facts dt {
+  font-weight: 400;
+  color: var(--ft-muted);
+}
+.head-facts dd {
+  margin: 0;
+}
+</style>

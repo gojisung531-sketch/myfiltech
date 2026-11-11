@@ -73,6 +73,12 @@ const fields = computed(() => [
       :item-label="(r) => r.report_no"
       search-placeholder="번호, 모델, 규격, 결과"
     >
+      <template #notice>
+        <p class="small text-muted mb-3">
+          정식 시험성적서 자료만 표시합니다. 검토 대기 관리대장 행은
+          <router-link to="/admin/report-register">관리대장 검토</router-link>에서 확인하세요.
+        </p>
+      </template>
       <template #cell-flags="{ row }">
         <span v-if="row.is_obsolete_standard" class="badge bg-warning text-dark me-1"
           >폐지 규격</span

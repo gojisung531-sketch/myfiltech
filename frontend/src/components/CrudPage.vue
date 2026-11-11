@@ -27,6 +27,7 @@ const rows = ref([])
 const count = ref(0)
 const page = ref(1)
 const loading = ref(false)
+const loadError = ref('')
 const query = reactive({ q: '', ...Object.fromEntries(props.filters.map((f) => [f.key, ''])) })
 
 const editor = reactive({ show: false, id: null, model: {}, error: '', saving: false })
@@ -35,6 +36,7 @@ const form = ref(null)
 
 async function load() {
   loading.value = true
+  loadError.value = ''
   try {
     const params = { page: page.value }
     for (const [key, value] of Object.entries(query)) if (value !== '') params[key] = value
@@ -42,7 +44,8 @@ async function load() {
     rows.value = data.results
     count.value = data.count
   } catch (err) {
-    toast.error(errorMessage(err))
+    rows.value = []
+    loadError.value = errorMessage(err, '목록을 불러오지 못했습니다.')
   } finally {
     loading.value = false
   }
@@ -127,7 +130,7 @@ defineExpose({ load, openEdit })
   <div>
     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
       <h2 class="h5 mb-0 me-auto">
-        {{ title }} <span class="text-muted small">({{ count }})</span>
+        {{ title }} <span class="text-muted small">({{ loadError ? '-' : count }})</span>
       </h2>
       <slot name="actions" />
       <button class="btn btn-primary btn-sm" @click="openCreate">
@@ -136,6 +139,12 @@ defineExpose({ load, openEdit })
     </div>
 
     <slot name="notice" :rows="rows" />
+
+    <div v-if="loadError" class="alert alert-danger d-flex align-items-center gap-2" role="alert">
+      <i class="bi bi-exclamation-octagon"></i>
+      <span class="flex-grow-1">{{ loadError }}</span>
+      <button class="btn btn-sm btn-outline-secondary" @click="load">다시 시도</button>
+    </div>
 
     <div class="row g-2 mb-3">
       <div class="col-sm-4 col-lg-3">
@@ -175,6 +184,14 @@ defineExpose({ load, openEdit })
                 <span class="spinner-border spinner-border-sm"></span>
               </td>
             </tr>
+            <tr v-else-if="loadError">
+              <td :colspan="columns.length + 1">
+                <EmptyState
+                  icon="bi-exclamation-triangle"
+                  message="서버에서 목록을 받지 못했습니다."
+                />
+              </td>
+            </tr>
             <tr v-else-if="!rows.length">
               <td :colspan="columns.length + 1"><EmptyState /></td>
             </tr>
@@ -185,6 +202,7 @@ defineExpose({ load, openEdit })
                 </slot>
               </td>
               <td class="text-end text-nowrap">
+                <slot name="row-actions" :row="row" />
                 <button class="btn btn-sm btn-outline-secondary me-1" @click="openEdit(row)">
                   수정
                 </button>

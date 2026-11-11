@@ -28,14 +28,27 @@ onMounted(async () => {
   schemas.value = await listSchemas({ owner_type: 'BID' })
 })
 
+const skipped = ref([]) // 서버가 거절한 파일 [{ filename, reason }]
+const uploadError = ref('')
+const lastFiles = ref([]) // 실패 후 다시 시도할 파일
+const addedCount = ref(0)
+
 async function upload(files) {
+  if (uploading.value) return
   uploading.value = true
+  skipped.value = []
+  uploadError.value = ''
+  addedCount.value = 0
+  lastFiles.value = files
   try {
     const res = await addAttachments(props.bid.id, files)
-    for (const s of res.skipped) toast.error(`${s.filename}: ${s.reason}`)
+    skipped.value = res.skipped || []
+    addedCount.value = files.length - skipped.value.length
+    lastFiles.value = []
     emit('changed')
   } catch (err) {
-    toast.error(errorMessage(err))
+    skipped.value = err.response?.data?.skipped || []
+    uploadError.value = errorMessage(err, '첨부를 추가하지 못했습니다.')
   } finally {
     uploading.value = false
   }
@@ -81,7 +94,7 @@ async function doDelete() {
   <div>
     <div class="card mb-3">
       <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
+        <table class="table table-sm align-middle mb-0 attach-table">
           <thead class="table-light">
             <tr>
               <th style="width: 4rem">순서</th>
@@ -113,7 +126,7 @@ async function doDelete() {
                 </button>
               </td>
               <td>
-                <span class="fw-semibold">{{ a.display_name }}</span>
+                <span class="fw-semibold text-break">{{ a.display_name }}</span>
                 <div class="small text-muted">
                   {{ a.file_format }} · {{ formatBytes(a.file_size) }} · 메타데이터
                   {{ a.metadata_count }}건
@@ -134,7 +147,9 @@ async function doDelete() {
                 <span :class="['badge', `bg-${DOCUMENT_STATUS_VARIANT[a.status]}`]">{{
                   a.status_label
                 }}</span>
-                <div v-if="a.error_message" class="small text-danger">{{ a.error_message }}</div>
+                <div v-if="a.error_message" class="small text-danger text-break">
+                  {{ a.error_message }}
+                </div>
               </td>
               <td class="text-center">
                 <input
@@ -164,9 +179,41 @@ async function doDelete() {
       <div class="card-header fw-semibold">첨부 추가</div>
       <div class="card-body">
         <FileDropzone :accept="BID_ATTACHMENT_FORMATS" :disabled="uploading" @files="upload" />
+        <div v-if="uploading" class="small text-muted mt-2">
+          <span class="spinner-border spinner-border-sm me-1"></span>파일을 저장하고 읽는 중입니다…
+        </div>
+        <div v-if="uploadError" class="alert alert-danger small mt-2 mb-0" role="alert">
+          {{ uploadError }}
+          <button
+            v-if="lastFiles.length"
+            type="button"
+            class="btn btn-sm btn-outline-secondary ms-2"
+            :disabled="uploading"
+            @click="upload(lastFiles)"
+          >
+            다시 시도
+          </button>
+        </div>
+        <div v-if="skipped.length" class="alert alert-warning small mt-2 mb-0" role="alert">
+          <strong v-if="addedCount">{{ addedCount }}개만 추가되었습니다.</strong>
+          <strong v-else>추가된 파일이 없습니다.</strong>
+          서버가 거절한 파일:
+          <ul class="mb-0">
+            <li v-for="s in skipped" :key="s.filename" class="text-break">
+              {{ s.filename }} — {{ s.reason }}
+            </li>
+          </ul>
+        </div>
+        <div
+          v-else-if="addedCount && !uploadError"
+          class="alert alert-success small mt-2 mb-0"
+          role="status"
+        >
+          {{ addedCount }}개 파일을 저장했습니다. 문서 읽기 결과는 위 목록의 상태에서 확인하세요.
+        </div>
         <p class="small text-muted mt-2 mb-0">
-          추가한 파일은 바로 텍스트 추출·분류됩니다. 분류를 바꾸면 다음 추출 때 해당 분류 기준으로
-          메타데이터를 다시 추출합니다.
+          추가한 파일은 저장 후 바로 텍스트 읽기·분류가 시도되며, 성공 여부는 목록의 상태로
+          확인합니다. 분류를 바꾸면 다음 추출 때 해당 분류 기준으로 메타데이터를 다시 추출합니다.
         </p>
       </div>
     </div>
@@ -182,3 +229,12 @@ async function doDelete() {
     />
   </div>
 </template>
+
+<style scoped>
+.attach-table {
+  min-width: 46rem;
+}
+.attach-table td:nth-child(2) {
+  min-width: 14rem;
+}
+</style>

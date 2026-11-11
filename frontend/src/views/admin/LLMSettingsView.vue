@@ -45,6 +45,7 @@ const params = reactive({
   error: '',
   saving: false,
 })
+const advancedOpen = ref(false) // 모델 고급 설정(접힘). 입력 오류가 있으면 펼친다.
 const modelModal = reactive({ show: false, confirmDeleteId: null, error: '' })
 const newModel = reactive({
   model_id: '',
@@ -60,6 +61,21 @@ const providerModels = computed(() =>
   (data.value?.models || []).filter((m) => m.provider === activeProvider.value),
 )
 const selectableModels = computed(() => providerModels.value.filter((m) => m.is_active))
+// '키 저장됨'과 '연결 성공'은 별개다. 마지막 테스트 기록이 있을 때만 성공/실패를 말한다.
+const connection = computed(() => {
+  const c = currentConfig.value
+  if (!c?.has_api_key) return { state: 'none', label: '키 없음', note: '연결할 수 없습니다.' }
+  if (!c.last_verified_at) {
+    return { state: 'untested', label: '연결 미확인', note: '아직 연결 테스트를 하지 않았습니다.' }
+  }
+  return c.last_verify_ok
+    ? { state: 'ok', label: '연결 성공', note: formatDate(c.last_verified_at) }
+    : {
+        state: 'fail',
+        label: '연결 실패',
+        note: `${formatDate(c.last_verified_at)} · ${c.last_verify_error || '원인 미확인'}`,
+      }
+})
 const showMissingNotice = computed(() => Boolean(data.value && !data.value.llm_configured))
 
 function providerConfig(code) {
@@ -169,6 +185,7 @@ async function saveParams() {
     overrides = JSON.parse(params.overridesText || '{}')
   } catch {
     params.error = '작업별 설정이 올바른 JSON이 아닙니다.'
+    advancedOpen.value = true
     return
   }
   params.saving = true
@@ -184,9 +201,10 @@ async function saveParams() {
         per_task_overrides: overrides,
       }),
     )
-    toast.success('LLM 설정을 저장했습니다.')
+    toast.success('AI 설정을 저장했습니다.')
   } catch (err) {
     params.error = errorMessage(err)
+    advancedOpen.value = true
   } finally {
     params.saving = false
   }
@@ -239,8 +257,8 @@ function formatDate(value) {
     <SettingsNav />
 
     <div v-if="showMissingNotice" class="alert alert-warning">
-      <i class="bi bi-exclamation-triangle me-1"></i>LLM API Key가 설정되지 않았습니다. 사용할
-      제공자를 선택하고 API Key를 입력하세요.
+      <i class="bi bi-exclamation-triangle me-1"></i>AI 연결이 필요합니다. 사용할 제공자를 선택하고
+      API Key를 입력하세요.
     </div>
 
     <div v-if="loading" class="text-center py-5"><span class="spinner-border"></span></div>
@@ -248,7 +266,7 @@ function formatDate(value) {
     <template v-else-if="data">
       <!-- 1. Provider -->
       <section class="card mb-4">
-        <div class="card-header fw-semibold">1. LLM 제공자</div>
+        <div class="card-header fw-semibold">1. AI 제공자와 연결</div>
         <div class="card-body">
           <div class="row g-3">
             <div v-for="code in PROVIDER_ORDER" :key="code" class="col-md-4">
@@ -271,10 +289,9 @@ function formatDate(value) {
                       <span class="text-muted small">({{ PROVIDER_INFO[code].vendor }})</span>
                     </div>
                     <div class="small mt-1">
-                      <template v-if="providerConfig(code)?.has_api_key">
-                        <i class="bi bi-key text-success me-1"></i>
-                        {{ providerConfig(code).api_key_masked }}
-                      </template>
+                      <span v-if="providerConfig(code)?.has_api_key" class="text-muted">
+                        키 저장됨 {{ providerConfig(code).api_key_masked }}
+                      </span>
                       <span v-else class="text-muted">API Key 없음</span>
                     </div>
                   </div>
@@ -285,13 +302,34 @@ function formatDate(value) {
 
           <form class="mt-4" @submit.prevent="saveKey">
             <h2 class="h6">{{ PROVIDER_INFO[activeProvider].name }} 연결 정보</h2>
+            <div class="d-flex flex-wrap gap-3 small mb-3">
+              <span>
+                API Key
+                <span class="badge bg-secondary ms-1">{{
+                  currentConfig?.has_api_key ? '저장됨' : '없음'
+                }}</span>
+              </span>
+              <span>
+                연결
+                <span
+                  class="badge ms-1"
+                  :class="
+                    connection.state === 'ok'
+                      ? 'bg-success'
+                      : connection.state === 'fail'
+                        ? 'bg-danger'
+                        : 'bg-secondary'
+                  "
+                  >{{ connection.label }}</span
+                >
+                <span class="text-muted ms-1">{{ connection.note }}</span>
+              </span>
+            </div>
             <div class="row g-3 align-items-end">
-              <div class="col-lg-5">
+              <div class="col-lg-6">
                 <label class="form-label" for="api-key">
                   API Key
-                  <span v-if="currentConfig?.has_api_key" class="text-muted small">
-                    (저장됨 {{ currentConfig.api_key_masked }} — 변경할 때만 입력)
-                  </span>
+                  <span class="text-muted small">(AI 서비스 이용 인증 키)</span>
                 </label>
                 <div class="input-group">
                   <input
@@ -313,15 +351,6 @@ function formatDate(value) {
                   </button>
                 </div>
               </div>
-              <div class="col-lg-4">
-                <label class="form-label" for="base-url">Base URL (선택)</label>
-                <input
-                  id="base-url"
-                  v-model="keyForm.base_url"
-                  class="form-control"
-                  placeholder="프록시 사용 시에만 입력"
-                />
-              </div>
               <div class="col-lg-3">
                 <div class="form-check form-switch mb-2">
                   <input
@@ -334,7 +363,26 @@ function formatDate(value) {
                 </div>
               </div>
             </div>
-            <div class="mt-3 d-flex gap-2">
+            <div v-if="currentConfig?.has_api_key" class="form-text mt-1">
+              저장된 키는 {{ currentConfig.api_key_masked }}로만 표시됩니다. 변경할 때만 새로
+              입력하세요.
+            </div>
+            <!-- 접어도 입력값은 DOM에 그대로 있어 저장 시 기존 값이 보존된다. -->
+            <details class="ft-help mt-3 border rounded p-2">
+              <summary class="fw-semibold">고급 설정</summary>
+              <div class="row g-3">
+                <div class="col-lg-6">
+                  <label class="form-label" for="base-url">Base URL (선택)</label>
+                  <input
+                    id="base-url"
+                    v-model="keyForm.base_url"
+                    class="form-control"
+                    placeholder="프록시 사용 시에만 입력"
+                  />
+                </div>
+              </div>
+            </details>
+            <div class="mt-3 d-flex flex-wrap align-items-center gap-2">
               <button class="btn btn-primary" :disabled="keyState.saving">
                 <span v-if="keyState.saving" class="spinner-border spinner-border-sm me-1"></span>
                 저장
@@ -349,6 +397,9 @@ function formatDate(value) {
                 </span>
                 연결 테스트
               </button>
+              <span class="small text-muted"
+                >새 API Key를 저장하면 연결 테스트가 자동으로 실행됩니다.</span
+              >
             </div>
             <div
               v-if="keyState.result"
@@ -361,19 +412,13 @@ function formatDate(value) {
                 API Key는 저장되었습니다. 내용을 확인한 뒤 다시 테스트하세요.
               </span>
             </div>
-            <div v-else-if="currentConfig?.last_verified_at" class="small text-muted mt-2">
-              마지막 테스트: {{ formatDate(currentConfig.last_verified_at) }} —
-              <span :class="currentConfig.last_verify_ok ? 'text-success' : 'text-danger'">
-                {{ currentConfig.last_verify_ok ? '성공' : currentConfig.last_verify_error }}
-              </span>
-            </div>
           </form>
         </div>
       </section>
 
       <!-- 2. Model & parameters -->
       <section class="card mb-4">
-        <div class="card-header fw-semibold">2. 모델 및 파라미터</div>
+        <div class="card-header fw-semibold">2. 사용 모델</div>
         <div class="card-body">
           <form @submit.prevent="saveParams">
             <div class="row g-3">
@@ -394,74 +439,83 @@ function formatDate(value) {
                   </button>
                 </div>
               </div>
-              <div class="col-6 col-lg-3">
-                <label class="form-label" for="p-temp">Temperature</label>
-                <input
-                  id="p-temp"
-                  v-model="params.temperature"
-                  type="number"
-                  min="0"
-                  max="2"
-                  step="0.1"
-                  class="form-control"
-                />
-              </div>
-              <div class="col-6 col-lg-3">
-                <label class="form-label" for="p-max">최대 출력 토큰</label>
-                <input
-                  id="p-max"
-                  v-model="params.max_output_tokens"
-                  type="number"
-                  min="1"
-                  class="form-control"
-                />
-              </div>
-              <div class="col-6 col-lg-3">
-                <label class="form-label" for="p-timeout">타임아웃(초)</label>
-                <input
-                  id="p-timeout"
-                  v-model="params.timeout_sec"
-                  type="number"
-                  min="5"
-                  class="form-control"
-                />
-              </div>
-              <div class="col-6 col-lg-3">
-                <label class="form-label" for="p-retries">재시도 횟수</label>
-                <input
-                  id="p-retries"
-                  v-model="params.max_retries"
-                  type="number"
-                  min="0"
-                  max="10"
-                  class="form-control"
-                />
-              </div>
-              <div class="col-lg-6 d-flex align-items-end">
-                <div class="form-check form-switch mb-2">
-                  <input
-                    id="p-json"
-                    v-model="params.json_mode"
-                    class="form-check-input"
-                    type="checkbox"
-                  />
-                  <label class="form-check-label" for="p-json">JSON(구조화) 출력 사용</label>
-                </div>
-              </div>
-              <div class="col-12">
-                <label class="form-label" for="p-overrides">작업별 설정 (JSON)</label>
-                <textarea
-                  id="p-overrides"
-                  v-model="params.overridesText"
-                  rows="6"
-                  class="form-control font-monospace small"
-                  spellcheck="false"
-                ></textarea>
-                <div class="form-text">
-                  예: {"evaluation.judge": {"temperature": 0.0}, "draft.*": {"temperature": 0.3}}
-                </div>
-              </div>
             </div>
+            <details
+              class="ft-help mt-3 border rounded p-2"
+              :open="advancedOpen"
+              @toggle="advancedOpen = $event.target.open"
+            >
+              <summary class="fw-semibold">고급 설정</summary>
+              <div class="row g-3">
+                <div class="col-6 col-lg-3">
+                  <label class="form-label" for="p-temp">Temperature</label>
+                  <input
+                    id="p-temp"
+                    v-model="params.temperature"
+                    type="number"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    class="form-control"
+                  />
+                </div>
+                <div class="col-6 col-lg-3">
+                  <label class="form-label" for="p-max">최대 출력 토큰</label>
+                  <input
+                    id="p-max"
+                    v-model="params.max_output_tokens"
+                    type="number"
+                    min="1"
+                    class="form-control"
+                  />
+                </div>
+                <div class="col-6 col-lg-3">
+                  <label class="form-label" for="p-timeout">타임아웃(초)</label>
+                  <input
+                    id="p-timeout"
+                    v-model="params.timeout_sec"
+                    type="number"
+                    min="5"
+                    class="form-control"
+                  />
+                </div>
+                <div class="col-6 col-lg-3">
+                  <label class="form-label" for="p-retries">재시도 횟수</label>
+                  <input
+                    id="p-retries"
+                    v-model="params.max_retries"
+                    type="number"
+                    min="0"
+                    max="10"
+                    class="form-control"
+                  />
+                </div>
+                <div class="col-lg-6 d-flex align-items-end">
+                  <div class="form-check form-switch mb-2">
+                    <input
+                      id="p-json"
+                      v-model="params.json_mode"
+                      class="form-check-input"
+                      type="checkbox"
+                    />
+                    <label class="form-check-label" for="p-json">JSON(구조화) 출력 사용</label>
+                  </div>
+                </div>
+                <div class="col-12">
+                  <label class="form-label" for="p-overrides">작업별 설정 (JSON)</label>
+                  <textarea
+                    id="p-overrides"
+                    v-model="params.overridesText"
+                    rows="6"
+                    class="form-control font-monospace small"
+                    spellcheck="false"
+                  ></textarea>
+                  <div class="form-text">
+                    예: {"evaluation.judge": {"temperature": 0.0}, "draft.*": {"temperature": 0.3}}
+                  </div>
+                </div>
+              </div>
+            </details>
             <div v-if="params.error" class="alert alert-danger py-2 small mt-3 mb-0">
               {{ params.error }}
             </div>

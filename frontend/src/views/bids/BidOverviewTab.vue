@@ -1,13 +1,16 @@
 <script setup>
 // ① 핵심 요구사항 (specs/05 §3 ①)
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 import { bidItems, bidRequirements } from '@/api/bids'
 import { downloadDocument } from '@/api/documents'
 import DocumentOffcanvas from '@/components/DocumentOffcanvas.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import LocationStatus from '@/components/LocationStatus.vue'
+import ReadableText from '@/components/ReadableText.vue'
 import { useToastStore } from '@/stores/toast'
 import { errorMessage } from '@/utils/errors'
+import { statusInfo, viewerFromLocation } from '@/utils/evidenceLocation'
 import {
   formatBytes,
   formatDateTime,
@@ -15,6 +18,7 @@ import {
   formatNumber,
   productDimension,
 } from '@/utils/format'
+import { describeNormalized } from '@/utils/normalizedLabels'
 import { REQUIREMENT_CATEGORIES } from '@/utils/options'
 
 const props = defineProps({ bid: { type: Object, required: true } })
@@ -35,20 +39,75 @@ const toast = useToastStore()
 const items = ref([])
 const requirements = ref([])
 const loading = ref(true)
+const loadError = ref('')
 const groupBy = ref('category')
-const viewer = ref({ documentId: null, page: 0, quote: '' })
+// 화면에서만 걸러 보는 검색·필터(서버 값이나 판정은 바꾸지 않는다)
+const filters = reactive({ q: '', category: '', item: '', mandatory: false })
+const hasFilters = computed(
+  () => !!filters.q.trim() || !!filters.category || filters.item !== '' || filters.mandatory,
+)
+function resetFilters() {
+  Object.assign(filters, { q: '', category: '', item: '', mandatory: false })
+}
+const filtered = computed(() => {
+  const q = filters.q.trim().toLowerCase()
+  return requirements.value.filter((r) => {
+    if (filters.category && r.category !== filters.category) return false
+    if (filters.item === 'none' && r.item) return false
+    if (filters.item !== '' && filters.item !== 'none' && r.item !== Number(filters.item)) {
+      return false
+    }
+    if (filters.mandatory && !r.is_mandatory) return false
+    if (q) {
+      const hay = `${r.title} ${r.requirement_text} ${r.source_quote || ''}`.toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
+})
 
-onMounted(async () => {
+// 의미가 확인된 키만 한글 표시명·단위로 보여 주고, 모르는 키는 원본 키 그대로 둔다(원본 키는 툴팁).
+const normalizedEntries = (r) => describeNormalized(r.normalized)
+const emptyViewer = {
+  documentId: null,
+  page: 0,
+  quote: '',
+  kind: 'attachment',
+  title: '',
+  text: '',
+  location: null,
+}
+const viewer = ref({ ...emptyViewer })
+
+async function load() {
+  loading.value = true
+  loadError.value = ''
   try {
     ;[items.value, requirements.value] = await Promise.all([
       bidItems.list(props.bid.id),
       bidRequirements.list(props.bid.id),
     ])
   } catch (err) {
-    toast.error(errorMessage(err))
+    items.value = []
+    requirements.value = []
+    loadError.value = errorMessage(err, '요구사항을 불러오지 못했습니다.')
   } finally {
     loading.value = false
   }
+}
+onMounted(load)
+
+// 목록이 비어 있는 이유를 서버 상태로만 구분한다. '원문에 조건이 없다'고 단정하지 않는다.
+const notExtracted = computed(() =>
+  ['DRAFT', 'FAILED', 'EXTRACTING'].includes(props.bid.processing_status),
+)
+const emptyRequirementsMessage = computed(() => {
+  const status = props.bid.processing_status
+  if (status === 'EXTRACTING') return '요구조건 추출이 진행 중입니다.'
+  if (status === 'FAILED')
+    return '처리에 실패해 저장된 요구사항이 없을 수 있습니다. 상세 오류를 확인하세요.'
+  if (status === 'DRAFT') return '아직 요구조건 추출을 실행하지 않았습니다.'
+  return '저장된 요구사항이 없습니다. 추출 누락 가능성이 있으니 원문을 확인하세요.'
 })
 
 const attachmentDocs = computed(() =>
@@ -62,40 +121,134 @@ const groups = computed(() => {
       .map((id) => ({
         key: `i${id}`,
         label: id ? itemLabel(items.value.find((i) => i.id === id)) : '공고 공통',
-        rows: requirements.value.filter((r) => r.item === id),
+        rows: filtered.value.filter((r) => r.item === id),
       }))
       .filter((g) => g.rows.length)
   }
   return REQUIREMENT_CATEGORIES.map((c) => ({
     key: c.value,
     label: c.label,
-    rows: requirements.value.filter((r) => r.category === c.value),
-  })).filter((g) => g.rows.length || MIN_CATEGORIES.includes(g.key))
+    rows: filtered.value.filter((r) => r.category === c.value),
+  })).filter((g) => g.rows.length || (!hasFilters.value && MIN_CATEGORIES.includes(g.key)))
 })
 
 const itemLabel = (item) => (item ? `${item.item_no || '-'}. ${item.name}` : '')
 
-const overview = computed(() => {
+// ---- 공고 요약: 구조화 필드를 우선 쓰고, 서술문은 원문을 그대로 보존한다 ----
+const dash = (v) => (v === null || v === undefined || v === '' ? null : v)
+const SUMMARY_GROUPS = {
+  qualification: ['CERTIFICATION', 'TRACK_RECORD', 'SUBMISSION_DOC'],
+  contract: ['DELIVERY', 'WARRANTY'],
+}
+const reqsOf = (categories) =>
+  requirements.value
+    .filter((r) => categories.includes(r.category))
+    .map((r) => ({
+      id: r.id,
+      title: r.title,
+      mandatory: r.is_mandatory,
+      category: r.category_label,
+    }))
+const summarySections = computed(() => {
   const b = props.bid
   return [
-    ['입찰 개시', formatDateTime(b.bid_open_at)],
-    ['입찰 마감', formatDateTime(b.bid_close_at)],
-    ['개찰', formatDateTime(b.opening_at)],
-    ['자격 등록 마감', formatDateTime(b.qualification_deadline_at)],
-    ['배정예산', formatKrw(b.budget_krw)],
-    ['추정가격', formatKrw(b.estimated_price_krw)],
-    ['입찰방법', b.bid_method || '-'],
-    ['물품분류', [b.item_category_code, b.item_category_name].filter(Boolean).join(' ') || '-'],
-    ['납품기한', b.delivery_terms || '-'],
-    ['납품장소', b.delivery_place || '-'],
-    ['하자보증', b.warranty_terms || '-'],
-    ['계약기관', b.contracting_org || '-'],
+    {
+      key: 'target',
+      title: '구매 대상',
+      facts: [
+        ['물품분류', dash([b.item_category_code, b.item_category_name].filter(Boolean).join(' '))],
+        ['입찰방법', dash(b.bid_method)],
+        ['사업장', dash(b.plant_name)],
+        ['수요기관', dash(b.buyer_org)],
+        ['계약기관', dash(b.contracting_org)],
+        ['배정예산', b.budget_krw == null ? null : formatKrw(b.budget_krw)],
+        ['추정가격', b.estimated_price_krw == null ? null : formatKrw(b.estimated_price_krw)],
+      ],
+      items: items.value.map(
+        (i) =>
+          `${itemLabel(i)}${i.spec_text ? ` — ${i.spec_text}` : ''}${
+            i.quantity != null ? ` · ${formatNumber(i.quantity)} ${i.unit || ''}` : ''
+          }`,
+      ),
+      reqs: [],
+    },
+    {
+      key: 'qualification',
+      title: '참가 자격',
+      facts: [['자격 등록 마감', dash(formatDateTime(b.qualification_deadline_at))]],
+      items: [],
+      reqs: reqsOf(SUMMARY_GROUPS.qualification),
+    },
+    {
+      key: 'schedule',
+      title: '일정',
+      facts: [
+        ['입찰 개시', dash(formatDateTime(b.bid_open_at))],
+        ['입찰 마감', dash(formatDateTime(b.bid_close_at))],
+        ['개찰', dash(formatDateTime(b.opening_at))],
+      ],
+      items: [],
+      reqs: [],
+    },
+    {
+      key: 'contract',
+      title: '계약 조건',
+      facts: [
+        ['납품조건', dash(b.delivery_terms)],
+        ['납품장소', dash(b.delivery_place)],
+        ['하자보증', dash(b.warranty_terms)],
+      ],
+      items: [],
+      reqs: reqsOf(SUMMARY_GROUPS.contract),
+    },
   ]
 })
+// 서버가 '원문 해석 확인 필요'로 표시한 요구조건(확인 사항)
+const reviewItems = computed(() =>
+  requirements.value
+    .filter((r) => r.normalized?.interpretation_review)
+    .map((r) => ({
+      id: r.id,
+      title: r.title,
+      reason: r.normalized.interpretation_review.reason || '',
+    })),
+)
 
 function openSource(r) {
+  // source_attachment는 첨부 ID다. 문서 ID는 첨부 목록의 document_id에서만 가져온다.
+  const loc = r.source_location
+  if (loc?.document_id) {
+    // 서버가 원본·인용을 대조한 위치(B6B). 숫자 페이지를 따로 해석하지 않는다.
+    viewer.value = viewerFromLocation(loc, { title: r.title, text: r.requirement_text })
+    return
+  }
+  if (loc) {
+    toast.show(
+      `원문을 열 수 없습니다 — ${statusInfo(loc).label}. ${statusInfo(loc).reason || ''}`,
+      'warning',
+    )
+    return
+  }
   const documentId = attachmentDocs.value[r.source_attachment]
-  if (documentId) viewer.value = { documentId, page: r.source_page || 0, quote: r.source_quote }
+  if (documentId) {
+    viewer.value = {
+      documentId,
+      page: r.source_page || 0,
+      quote: r.source_quote || '',
+      kind: 'requirement_source',
+      title: r.title,
+      text: r.requirement_text,
+    }
+  } else {
+    toast.show(
+      '이 요구사항의 출처 첨부를 찾을 수 없습니다(첨부가 삭제되었거나 연결되지 않음).',
+      'warning',
+    )
+  }
+}
+
+function openAttachment(a) {
+  viewer.value = { ...emptyViewer, documentId: a.document_id, title: a.display_name }
 }
 
 async function download(attachment) {
@@ -119,16 +272,57 @@ async function download(attachment) {
       <div class="col-lg-7">
         <div class="card h-100">
           <div class="card-header fw-semibold">공고 요약</div>
-          <div class="card-body small">
-            <p class="mb-3" style="white-space: pre-line">
-              {{ bid.summary || '요약이 없습니다.' }}
-            </p>
-            <dl class="row mb-0">
-              <template v-for="[label, value] in overview" :key="label">
-                <dt class="col-sm-3 fw-normal text-muted">{{ label }}</dt>
-                <dd class="col-sm-9 mb-1">{{ value }}</dd>
-              </template>
-            </dl>
+          <div class="card-body small summary">
+            <section v-for="sec in summarySections" :key="sec.key" class="sum-sec">
+              <h3 class="sum-title">{{ sec.title }}</h3>
+              <dl class="sum-facts">
+                <div v-for="[label, value] in sec.facts" :key="label" class="sum-fact">
+                  <dt>{{ label }}</dt>
+                  <dd class="text-break">
+                    <template v-if="value">{{ value }}</template>
+                    <span v-else class="text-muted">미기재</span>
+                  </dd>
+                </div>
+              </dl>
+              <ul v-if="sec.items.length" class="sum-list list-unstyled ps-0">
+                <li v-for="(line, i) in sec.items" :key="i" class="text-break">{{ line }}</li>
+              </ul>
+              <div v-if="sec.reqs.length" class="sum-reqs">
+                <div class="text-muted">관련 요구조건 (저장된 요구사항)</div>
+                <ul class="sum-list">
+                  <li v-for="r in sec.reqs" :key="r.id" class="text-break">
+                    {{ r.title }}
+                    <span v-if="r.mandatory" class="badge bg-danger ms-1">필수</span>
+                    <span class="text-muted ms-1">{{ r.category }}</span>
+                  </li>
+                </ul>
+              </div>
+            </section>
+
+            <section class="sum-sec">
+              <h3 class="sum-title">확인 사항</h3>
+              <p v-if="!reviewItems.length" class="text-muted mb-1">
+                서버가 '원문 해석 확인 필요'로 표시한 요구조건이 없습니다(원문 확인이 불필요하다는
+                뜻은 아닙니다).
+              </p>
+              <details v-else class="ft-help mb-1">
+                <summary>원문 해석 확인 필요 요구조건 {{ reviewItems.length }}건</summary>
+                <ul class="sum-list">
+                  <li v-for="r in reviewItems" :key="r.id" class="text-break">
+                    <strong>{{ r.title }}</strong>
+                    <div v-if="r.reason" class="text-muted">{{ r.reason }}</div>
+                  </li>
+                </ul>
+              </details>
+            </section>
+
+            <section class="sum-sec">
+              <h3 class="sum-title">
+                요약문 <span class="fw-normal text-muted">(서버 저장 원문)</span>
+              </h3>
+              <ReadableText v-if="bid.summary" :text="bid.summary" />
+              <p v-else class="text-muted mb-0">저장된 요약이 없습니다.</p>
+            </section>
           </div>
         </div>
       </div>
@@ -142,7 +336,7 @@ async function download(attachment) {
               class="list-group-item d-flex align-items-center"
             >
               <i class="bi bi-file-earmark me-2"></i>
-              <span class="me-auto">
+              <span class="me-auto text-break">
                 {{ a.display_name }}
                 <span v-if="a.is_primary" class="badge bg-primary ms-1">공고문</span>
                 <span class="text-muted d-block"
@@ -152,7 +346,7 @@ async function download(attachment) {
               <button
                 class="btn btn-sm btn-link"
                 :aria-label="`${a.display_name} 보기`"
-                @click="viewer = { documentId: a.document_id, page: 0, quote: '' }"
+                @click="openAttachment(a)"
               >
                 <i class="bi bi-eye"></i>
               </button>
@@ -173,29 +367,39 @@ async function download(attachment) {
     <div class="card mb-3">
       <div class="card-header fw-semibold">품목</div>
       <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0 small">
+        <table class="table table-sm align-middle mb-0 small item-table">
           <thead class="table-light">
             <tr>
               <th>품번</th>
               <th>품명</th>
               <th>규격</th>
               <th class="text-end">수량</th>
-              <th>매칭 제품 후보</th>
+              <th>제품 매칭 후보 (매칭 점수)</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!items.length && !loading">
-              <td colspan="5" class="text-muted text-center py-3">품목이 없습니다.</td>
+              <td colspan="5" class="text-muted text-center py-3">
+                {{
+                  loadError
+                    ? '품목을 불러오지 못했습니다.'
+                    : notExtracted
+                      ? '추출된 품목이 없습니다. (추출 미실행·진행 중·실패 상태)'
+                      : '저장된 품목이 없습니다. 원문 확인이 필요합니다.'
+                }}
+              </td>
             </tr>
             <tr v-for="item in items" :key="item.id">
               <td>{{ item.item_no || '-' }}</td>
-              <td>
+              <td class="text-break">
                 {{ item.name }}
                 <div class="text-muted">{{ item.filter_type_label }}</div>
               </td>
               <td>
                 {{ productDimension(item) }}
-                <div class="text-muted" style="white-space: pre-line">{{ item.spec_text }}</div>
+                <div class="text-muted text-break" style="white-space: pre-line">
+                  {{ item.spec_text }}
+                </div>
               </td>
               <td class="text-end text-nowrap">
                 {{ formatNumber(item.quantity) }} {{ item.unit }}
@@ -205,9 +409,9 @@ async function download(attachment) {
                   <span :class="{ 'fw-semibold': c.product === item.matched_product }">
                     {{ c.model_no }}
                   </span>
-                  <span class="text-muted">({{ Math.round(c.score * 100) }})</span>
+                  <span class="text-muted">(매칭 {{ Math.round(c.score * 100) }})</span>
                 </div>
-                <span v-if="!item.candidates.length" class="text-muted">-</span>
+                <span v-if="!item.candidates.length" class="text-muted">후보 없음</span>
               </td>
             </tr>
           </tbody>
@@ -221,14 +425,14 @@ async function download(attachment) {
         <div class="btn-group btn-group-sm" role="group" aria-label="그룹 기준">
           <button
             class="btn"
-            :class="groupBy === 'category' ? 'btn-secondary' : 'btn-outline-secondary'"
+            :class="groupBy === 'category' ? 'btn-primary' : 'btn-outline-secondary'"
             @click="groupBy = 'category'"
           >
             카테고리별
           </button>
           <button
             class="btn"
-            :class="groupBy === 'item' ? 'btn-secondary' : 'btn-outline-secondary'"
+            :class="groupBy === 'item' ? 'btn-primary' : 'btn-outline-secondary'"
             @click="groupBy = 'item'"
           >
             품목별
@@ -238,8 +442,82 @@ async function download(attachment) {
       <div v-if="loading" class="text-center py-4">
         <span class="spinner-border spinner-border-sm"></span>
       </div>
-      <EmptyState v-else-if="!requirements.length" message="추출된 요구사항이 없습니다." />
-      <table v-else class="table table-sm align-middle mb-0 small">
+      <div
+        v-else-if="loadError"
+        class="alert alert-danger d-flex align-items-center gap-2 m-3"
+        role="alert"
+      >
+        <i class="bi bi-exclamation-octagon"></i>
+        <span class="flex-grow-1">{{ loadError }}</span>
+        <button class="btn btn-sm btn-outline-secondary" @click="load">다시 시도</button>
+      </div>
+      <EmptyState
+        v-else-if="!requirements.length"
+        :icon="notExtracted ? 'bi-hourglass' : 'bi-question-circle'"
+        :message="emptyRequirementsMessage"
+      >
+        <details class="ft-help d-inline-block text-start">
+          <summary>이 상태의 뜻</summary>
+          <p>비어 있다는 것은 공고에 조건이 없다는 뜻이 아닙니다. 첨부 원문으로 직접 확인하세요.</p>
+        </details>
+      </EmptyState>
+      <div v-else class="card-body border-bottom py-2">
+        <div class="row g-2 align-items-center">
+          <div class="col-12 col-md-4">
+            <input
+              v-model="filters.q"
+              class="form-control form-control-sm"
+              placeholder="요구사항 검색 (제목·내용·저장된 인용문)"
+              aria-label="요구사항 검색"
+            />
+          </div>
+          <div class="col-6 col-md-auto">
+            <select
+              v-model="filters.category"
+              class="form-select form-select-sm"
+              aria-label="카테고리"
+            >
+              <option value="">카테고리: 전체</option>
+              <option v-for="c in REQUIREMENT_CATEGORIES" :key="c.value" :value="c.value">
+                {{ c.label }}
+              </option>
+            </select>
+          </div>
+          <div class="col-6 col-md-auto">
+            <select v-model="filters.item" class="form-select form-select-sm" aria-label="품목">
+              <option value="">품목: 전체</option>
+              <option value="none">공고 공통</option>
+              <option v-for="i in items" :key="i.id" :value="String(i.id)">
+                {{ itemLabel(i) }}
+              </option>
+            </select>
+          </div>
+          <div class="col-auto">
+            <div class="form-check mb-0">
+              <input
+                id="req-mandatory"
+                v-model="filters.mandatory"
+                class="form-check-input"
+                type="checkbox"
+              />
+              <label class="form-check-label small" for="req-mandatory">필수만</label>
+            </div>
+          </div>
+          <div v-if="hasFilters" class="col-auto">
+            <button class="btn btn-sm btn-outline-secondary" @click="resetFilters">초기화</button>
+          </div>
+          <div class="col-auto ms-md-auto small text-muted">
+            {{ hasFilters ? `${filtered.length} / ` : '' }}전체 {{ requirements.length }}건
+          </div>
+        </div>
+      </div>
+      <EmptyState
+        v-if="!loading && !loadError && requirements.length && !filtered.length"
+        message="조건에 맞는 요구사항이 없습니다."
+      >
+        <button class="btn btn-sm btn-outline-secondary" @click="resetFilters">필터 초기화</button>
+      </EmptyState>
+      <table v-else class="table table-sm align-middle mb-0 small req-table">
         <tbody v-for="group in groups" :key="group.key">
           <tr class="table-light">
             <th colspan="3">
@@ -247,7 +525,7 @@ async function download(attachment) {
             </th>
           </tr>
           <tr v-if="!group.rows.length">
-            <td colspan="3" class="text-muted ps-4">공고에 명시된 요구사항 없음</td>
+            <td colspan="3" class="text-muted ps-4">등록·추출된 요구사항 없음 — 원문 확인 필요</td>
           </tr>
           <tr
             v-for="r in group.rows"
@@ -255,7 +533,7 @@ async function download(attachment) {
             :class="{ 'table-warning': r.normalized?.placeholder }"
           >
             <td class="ps-4" style="width: 55%">
-              <span class="fw-semibold">{{ r.title }}</span>
+              <span class="fw-semibold text-break">{{ r.title }}</span>
               <span v-if="r.is_mandatory" class="badge bg-danger ms-1">필수</span>
               <span v-if="groupBy === 'category' && r.item_label" class="text-muted ms-1"
                 >· {{ r.item_label }}</span
@@ -263,7 +541,25 @@ async function download(attachment) {
               <span v-if="groupBy === 'item'" class="text-muted ms-1"
                 >· {{ r.category_label }}</span
               >
-              <div class="text-muted">{{ r.requirement_text }}</div>
+              <ReadableText class="text-muted" :text="r.requirement_text" />
+              <details v-if="normalizedEntries(r).length || r.source_quote" class="ft-help mt-1">
+                <summary>조건·단위·저장된 인용문</summary>
+                <dl v-if="normalizedEntries(r).length" class="row mb-1">
+                  <template v-for="e in normalizedEntries(r)" :key="e.key">
+                    <dt class="col-sm-4 fw-normal" :title="`원본 키: ${e.key}`">
+                      {{ e.label }}
+                      <code v-if="!e.known" class="ms-1 text-muted">(원본 키)</code>
+                    </dt>
+                    <dd class="col-sm-8 mb-0 text-break">
+                      <span v-if="e.value === null" class="text-muted">(비어 있음)</span>
+                      <template v-else>{{ e.value }}{{ e.unit ? ` ${e.unit}` : '' }}</template>
+                    </dd>
+                  </template>
+                </dl>
+                <p v-if="r.source_quote" class="mb-0 text-break">
+                  저장된 인용문: “{{ r.source_quote }}”
+                </p>
+              </details>
             </td>
             <td>
               <button
@@ -272,9 +568,14 @@ async function download(attachment) {
                 :title="r.source_quote"
                 @click="openSource(r)"
               >
-                <i class="bi bi-quote me-1"></i>{{ r.source_attachment_name
-                }}<span v-if="r.source_page"> p.{{ r.source_page }}</span>
+                <i class="bi bi-quote me-1"></i>{{ r.source_attachment_name }}
               </button>
+              <div v-if="r.source_attachment_name" class="small text-muted">
+                <LocationStatus v-if="r.source_location" :location="r.source_location" />
+                <template v-else>
+                  {{ r.source_page ? `저장된 참조 위치 p.${r.source_page}` : '위치 미확인' }}
+                </template>
+              </div>
               <span v-else class="text-muted">-</span>
             </td>
           </tr>
@@ -286,7 +587,67 @@ async function download(attachment) {
       :document-id="viewer.documentId"
       :page="viewer.page"
       :quote="viewer.quote"
-      @close="viewer = { documentId: null, page: 0, quote: '' }"
+      :kind="viewer.kind"
+      :context-title="viewer.title"
+      :context-text="viewer.text"
+      :location="viewer.location"
+      @close="viewer = { ...emptyViewer }"
     />
   </div>
 </template>
+
+<style scoped>
+.sum-sec {
+  padding-bottom: 0.9rem;
+  margin-bottom: 0.9rem;
+  border-bottom: 1px solid var(--ft-border);
+}
+.sum-sec:last-child {
+  border-bottom: 0;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+.sum-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.sum-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.35rem 1.25rem;
+  margin: 0 0 0.35rem;
+}
+.sum-fact dt {
+  font-weight: 400;
+  color: var(--ft-muted);
+}
+.sum-fact dd {
+  margin: 0;
+}
+.sum-list {
+  margin: 0.25rem 0 0.35rem;
+  padding-left: 1.1rem;
+}
+.sum-list li {
+  margin-bottom: 0.2rem;
+}
+.item-table {
+  min-width: 40rem;
+}
+@media (max-width: 575.98px) {
+  /* 좁은 화면: 요구 내용을 전체 폭으로 읽고 출처 버튼은 그 아래에 둔다 */
+  .req-table tbody tr:not(.table-light) {
+    display: flex;
+    flex-direction: column;
+  }
+  .req-table tbody tr:not(.table-light) td {
+    width: 100% !important;
+    padding-top: 0.15rem;
+    padding-bottom: 0.15rem;
+  }
+}
+.req-table td:last-child {
+  word-break: break-all;
+}
+</style>

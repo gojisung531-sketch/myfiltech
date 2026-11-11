@@ -7,5 +7,5 @@ body {
     -apple-system,
     'Segoe UI',
     sans-serif;
-  background-color: #f8f9fa;
+  background-color: var(--ft-bg, #f5f7fa);
 }

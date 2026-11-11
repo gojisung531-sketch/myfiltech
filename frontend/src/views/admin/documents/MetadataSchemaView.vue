@@ -135,13 +135,13 @@ async function confirmAction() {
       </button>
     </div>
 
-    <div class="card">
-      <table class="table table-sm align-middle mb-0">
+    <div class="card table-responsive">
+      <table class="table table-sm align-middle mb-0 schema-table">
         <thead class="table-light">
           <tr>
             <th>순서</th>
             <th>분류</th>
-            <th>파일명 규칙</th>
+            <th>자동 분류 규칙</th>
             <th class="text-end">필드</th>
             <th class="text-end">문서</th>
             <th class="text-end">작업</th>
@@ -154,11 +154,10 @@ async function confirmAction() {
               <div class="fw-semibold">
                 {{ s.name }} <span v-if="!s.is_active" class="badge bg-secondary">비활성</span>
               </div>
-              <div class="small text-muted font-monospace">
-                {{ s.code }} → {{ s.target_model || '-' }}
-              </div>
             </td>
-            <td class="small font-monospace">{{ s.filename_patterns.join('  ·  ') || '-' }}</td>
+            <td class="small">
+              {{ s.filename_patterns.length ? `파일명 규칙 ${s.filename_patterns.length}개` : '-' }}
+            </td>
             <td class="text-end">{{ s.fields.length }}</td>
             <td class="text-end">{{ s.document_count }}</td>
             <td class="text-end text-nowrap">
@@ -187,17 +186,7 @@ async function confirmAction() {
     >
       <form id="schema-form" @submit.prevent="save">
         <div class="row g-3">
-          <div class="col-md-3">
-            <label class="form-label small" for="sc-code">코드</label>
-            <input
-              id="sc-code"
-              v-model="editor.model.code"
-              class="form-control form-control-sm font-monospace"
-              :readonly="!!editor.id"
-              required
-            />
-          </div>
-          <div class="col-md-3">
+          <div class="col-md-4">
             <label class="form-label small" for="sc-name">이름</label>
             <input
               id="sc-name"
@@ -206,7 +195,7 @@ async function confirmAction() {
               required
             />
           </div>
-          <div class="col-md-2">
+          <div class="col-md-3">
             <label class="form-label small" for="sc-owner">문서 종류</label>
             <select
               id="sc-owner"
@@ -218,7 +207,7 @@ async function confirmAction() {
               </option>
             </select>
           </div>
-          <div class="col-md-2">
+          <div class="col-md-3">
             <label class="form-label small" for="sc-priority">순서</label>
             <input
               id="sc-priority"
@@ -238,8 +227,8 @@ async function confirmAction() {
               <label class="form-check-label small" for="sc-active">사용</label>
             </div>
           </div>
-          <div class="col-md-6">
-            <label class="form-label small" for="sc-desc">설명 (LLM 분류에 사용)</label>
+          <div class="col-12">
+            <label class="form-label small" for="sc-desc">설명 (자동 분류에 사용)</label>
             <textarea
               id="sc-desc"
               v-model="editor.model.description"
@@ -247,18 +236,35 @@ async function confirmAction() {
               rows="3"
             ></textarea>
           </div>
-          <div class="col-md-6">
-            <label class="form-label small" for="sc-patterns"
-              >파일명 규칙 (정규식, 한 줄에 하나)</label
-            >
-            <textarea
-              id="sc-patterns"
-              v-model="editor.patterns"
-              class="form-control form-control-sm font-monospace"
-              rows="3"
-            ></textarea>
-          </div>
         </div>
+
+        <!-- 내부 식별 코드와 정규식 규칙: 기본 접힘(새 분류는 코드 입력이 필요해 펼침). 값은 접어도 그대로 저장된다. -->
+        <details class="ft-help mt-3 border rounded p-2" :open="!editor.id">
+          <summary class="fw-semibold">고급 설정</summary>
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label small" for="sc-code">분류 코드 (시스템 식별용)</label>
+              <input
+                id="sc-code"
+                v-model="editor.model.code"
+                class="form-control form-control-sm"
+                :readonly="!!editor.id"
+                required
+              />
+            </div>
+            <div class="col-md-8">
+              <label class="form-label small" for="sc-patterns"
+                >파일명 규칙 (정규식, 한 줄에 하나)</label
+              >
+              <textarea
+                id="sc-patterns"
+                v-model="editor.patterns"
+                class="form-control form-control-sm font-monospace"
+                rows="3"
+              ></textarea>
+            </div>
+          </div>
+        </details>
 
         <h3 class="h6 mt-4">메타데이터 필드</h3>
         <table class="table table-sm align-middle small">
@@ -361,3 +367,9 @@ async function confirmAction() {
     />
   </div>
 </template>
+
+<style scoped>
+.schema-table {
+  min-width: 40rem;
+}
+</style>

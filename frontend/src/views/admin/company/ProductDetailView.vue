@@ -15,6 +15,7 @@ import { PRODUCT_FIELDS } from './productFields'
 const route = useRoute()
 const toast = useToastStore()
 const product = ref(null)
+const loadError = ref('')
 const form = ref(null)
 const editor = reactive({ show: false, model: {}, error: '', saving: false })
 
@@ -46,10 +47,13 @@ const specs = computed(() =>
 )
 
 async function load() {
+  loadError.value = ''
   try {
     product.value = await products.get(route.params.id)
   } catch (err) {
-    toast.error(errorMessage(err))
+    // 이미 불러온 상태에서의 재조회 실패는 알림만, 최초 실패는 화면에서 다시 시도하게 한다.
+    if (product.value) toast.error(errorMessage(err))
+    else loadError.value = errorMessage(err, '제품 정보를 불러오지 못했습니다.')
   }
 }
 onMounted(load)
@@ -83,7 +87,15 @@ async function save() {
 <template>
   <div>
     <CompanyNav />
-    <div v-if="!product" class="text-center py-5"><span class="spinner-border"></span></div>
+    <div v-if="loadError" class="alert alert-danger d-flex align-items-center gap-2" role="alert">
+      <i class="bi bi-exclamation-octagon"></i>
+      <span class="flex-grow-1">{{ loadError }}</span>
+      <button class="btn btn-sm btn-outline-secondary" @click="load">다시 시도</button>
+      <router-link to="/admin/products" class="btn btn-sm btn-outline-secondary"
+        >제품 목록</router-link
+      >
+    </div>
+    <div v-else-if="!product" class="text-center py-5"><span class="spinner-border"></span></div>
     <template v-else>
       <div class="d-flex align-items-center mb-3">
         <router-link to="/admin/products" class="btn btn-sm btn-outline-secondary me-2">

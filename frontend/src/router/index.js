@@ -80,6 +80,11 @@ const routes = [
       'admin-metadata-schemas',
       () => import('@/views/admin/documents/MetadataSchemaView.vue'),
     ],
+    [
+      '/admin/report-register',
+      'admin-report-register',
+      () => import('@/views/admin/company/ReportRegisterView.vue'),
+    ],
     ['/admin/jobs', 'admin-jobs', () => import('@/views/admin/ops/JobsView.vue')],
     ['/admin/llm-logs', 'admin-llm-logs', () => import('@/views/admin/ops/LLMLogsView.vue')],
     ['/admin/bids', 'admin-bids', () => import('@/views/admin/bids/BidAdminListView.vue')],

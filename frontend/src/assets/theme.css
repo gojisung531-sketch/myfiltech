@@ -1,0 +1,320 @@
+/* 필텍 공통 테마 — 확정 색상 (Phase 1). Bootstrap 5.0은 CSS 변수를 쓰지 않으므로
+   필요한 컴포넌트만 이 파일에서 덮어쓴다. 색상 값은 아래 변수에서만 정의한다. */
+:root {
+  /* 중립 팔레트 (Phase 6A). 역할별로만 사용하고 개별 화면에 색을 직접 쓰지 않는다. */
+  --ft-bg: #f7f7f5;
+  --ft-surface: #ffffff;
+  --ft-text: #252a2e;
+  --ft-muted: #687078;
+  --ft-border: #e1e3e5;
+  --ft-border-strong: #c9cdd1;
+  --ft-hover-bg: #f0f1f2;
+
+  /* 주요 버튼·사이드바 */
+  --ft-btn: #30363b;
+  --ft-btn-hover: #23282d;
+  --ft-sidebar: #30363b;
+
+  /* 링크·선택 상태·아이콘 등 작은 강조 (기존 파랑) */
+  --ft-primary: #3f647e;
+  --ft-primary-hover: #335368;
+  --ft-primary-soft: #eaf0f5;
+
+  /* 상태: 글자/테두리색과 연한 배경. 큰 면적에는 쓰지 않고 배지·점·테두리로 표현한다. */
+  --ft-ok-fg: #26734d;
+  --ft-ok-bg: #eaf5ee;
+  --ft-warn-fg: #8a5700;
+  --ft-warn-bg: #fff4df;
+  --ft-check-fg: #536b82;
+  --ft-check-bg: #edf2f7;
+  --ft-danger-fg: #b54747;
+  --ft-danger-bg: #fcefef;
+
+  --ft-sidebar-width: 15.625rem;
+  --ft-topbar-height: 3.5rem;
+}
+
+body {
+  background-color: var(--ft-bg);
+  color: var(--ft-text);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+a {
+  color: var(--ft-primary);
+}
+a:hover {
+  color: var(--ft-primary-hover);
+}
+.text-muted {
+  color: var(--ft-muted) !important;
+}
+.text-primary {
+  color: var(--ft-primary) !important;
+}
+.bg-primary {
+  background-color: var(--ft-btn) !important;
+}
+.border-primary {
+  border-color: var(--ft-primary) !important;
+}
+.bg-light {
+  background-color: var(--ft-bg) !important;
+}
+.border,
+.card,
+.list-group-item,
+.table > :not(caption) > * > *,
+hr {
+  border-color: var(--ft-border);
+}
+.card {
+  background-color: var(--ft-surface);
+}
+.card-header,
+.card-footer {
+  background-color: var(--ft-surface);
+  border-color: var(--ft-border);
+}
+
+/* 버튼: 주요 버튼은 중립 진회색, 파랑은 링크·선택 같은 작은 강조에만 쓴다 */
+.btn-primary {
+  background-color: var(--ft-btn);
+  border-color: var(--ft-btn);
+  color: #fff;
+}
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active,
+.btn-check:checked + .btn-primary,
+.btn-primary.active {
+  background-color: var(--ft-btn-hover);
+  border-color: var(--ft-btn-hover);
+  color: #fff;
+}
+.btn-primary:focus,
+.btn-outline-primary:focus,
+.btn-outline-secondary:focus {
+  box-shadow: 0 0 0 0.2rem rgba(48, 54, 59, 0.25);
+}
+.btn-primary:disabled,
+.btn-primary.disabled {
+  background-color: var(--ft-btn);
+  border-color: var(--ft-btn);
+}
+.btn-outline-primary,
+.btn-outline-secondary,
+.btn-outline-success,
+.btn-outline-danger {
+  color: var(--ft-text);
+  border-color: var(--ft-border-strong);
+  background-color: var(--ft-surface);
+}
+.btn-outline-danger {
+  color: var(--ft-danger-fg);
+}
+.btn-outline-primary:hover,
+.btn-outline-primary:active,
+.btn-outline-primary.active,
+.btn-outline-secondary:hover,
+.btn-outline-secondary:active,
+.btn-outline-secondary.active,
+.btn-outline-success:hover,
+.btn-outline-danger:hover {
+  background-color: var(--ft-hover-bg);
+  border-color: var(--ft-btn);
+  color: var(--ft-text);
+}
+.btn-outline-danger:hover {
+  color: var(--ft-danger-fg);
+  border-color: var(--ft-danger-fg);
+}
+.btn-link {
+  color: var(--ft-primary);
+}
+.btn-secondary {
+  background-color: var(--ft-muted);
+  border-color: var(--ft-muted);
+}
+
+/* 폼 */
+.form-control,
+.form-select {
+  border-color: var(--ft-border-strong);
+  color: var(--ft-text);
+}
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--ft-primary);
+  box-shadow: 0 0 0 0.2rem rgba(63, 100, 126, 0.2);
+}
+.form-check-input:checked {
+  background-color: var(--ft-btn);
+  border-color: var(--ft-btn);
+}
+.form-check-input:focus {
+  border-color: var(--ft-primary);
+  box-shadow: 0 0 0 0.2rem rgba(63, 100, 126, 0.2);
+}
+
+/* 탭·페이지네이션·드롭다운·진행 막대 */
+.nav-tabs {
+  border-bottom-color: var(--ft-border);
+}
+.nav-tabs .nav-link {
+  color: var(--ft-muted);
+}
+.nav-tabs .nav-link:hover {
+  color: var(--ft-text);
+  border-color: var(--ft-border) var(--ft-border) transparent;
+}
+.nav-tabs .nav-link.active {
+  color: var(--ft-text);
+  font-weight: 600;
+  background-color: var(--ft-surface);
+  border-color: var(--ft-border) var(--ft-border) var(--ft-surface);
+  box-shadow: inset 0 2px 0 var(--ft-primary);
+}
+.nav-pills .nav-link.active {
+  background-color: var(--ft-btn);
+}
+.page-link {
+  color: var(--ft-text);
+}
+.page-item.active .page-link {
+  background-color: var(--ft-btn);
+  border-color: var(--ft-btn);
+}
+.dropdown-item.active,
+.dropdown-item:active,
+.list-group-item.active {
+  background-color: var(--ft-btn);
+  border-color: var(--ft-btn);
+}
+.dropdown-item:hover,
+.dropdown-item:focus {
+  background-color: var(--ft-hover-bg);
+  color: var(--ft-text);
+}
+.progress-bar {
+  background-color: var(--ft-primary);
+}
+
+/* 상태 표시: 한글 라벨은 각 컴포넌트가 제공한다. 배지는 흰 바탕에 글자·테두리만 상태색으로 두고,
+   넓은 면적의 상태색 배경은 쓰지 않는다. */
+.badge.bg-success,
+.badge.bg-warning,
+.badge.bg-info,
+.badge.bg-danger {
+  background-color: var(--ft-surface) !important;
+  font-weight: 600;
+}
+.badge.bg-success {
+  color: var(--ft-ok-fg) !important;
+  border: 1px solid var(--ft-ok-fg);
+}
+.badge.bg-warning {
+  color: var(--ft-warn-fg) !important;
+  border: 1px solid var(--ft-warn-fg);
+}
+.badge.bg-info {
+  color: var(--ft-check-fg) !important;
+  border: 1px solid var(--ft-check-fg);
+}
+.badge.bg-danger {
+  color: var(--ft-danger-fg) !important;
+  border: 1px solid var(--ft-danger-fg);
+}
+.badge.bg-secondary {
+  background-color: var(--ft-hover-bg) !important;
+  color: var(--ft-muted) !important;
+  font-weight: 500;
+}
+.text-success {
+  color: var(--ft-ok-fg) !important;
+}
+.text-warning {
+  color: var(--ft-warn-fg) !important;
+}
+.text-info {
+  color: var(--ft-check-fg) !important;
+}
+.text-danger {
+  color: var(--ft-danger-fg) !important;
+}
+
+/* 안내·경고·오류: 흰 바탕 + 왼쪽 상태색 선. 의미(경고/오류/확인)는 선 색과 문구로 구분한다. */
+.alert {
+  background-color: var(--ft-surface);
+  color: var(--ft-text);
+  border: 1px solid var(--ft-border);
+  border-left-width: 4px;
+}
+.alert-success {
+  border-left-color: var(--ft-ok-fg);
+}
+.alert-warning {
+  border-left-color: var(--ft-warn-fg);
+}
+.alert-info {
+  border-left-color: var(--ft-check-fg);
+}
+.alert-secondary,
+.alert-light {
+  border-left-color: var(--ft-border-strong);
+  color: var(--ft-muted);
+}
+.alert-danger {
+  border-left-color: var(--ft-danger-fg);
+  color: var(--ft-danger-fg);
+}
+.alert-danger .alert-link,
+.alert-danger a {
+  color: inherit;
+}
+.alert-link {
+  color: inherit;
+  text-decoration: underline;
+}
+.table-warning {
+  --bs-table-bg: var(--ft-warn-bg);
+}
+
+/* 표 */
+.table {
+  color: var(--ft-text);
+}
+.table-light,
+.table-light > th,
+.table-light > td {
+  --bs-table-bg: var(--ft-bg);
+  background-color: var(--ft-bg);
+  color: var(--ft-text);
+  border-color: var(--ft-border);
+}
+.table th,
+.table td {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 기본 접힘 도움말: 상시 설명은 줄이고 필요할 때 펼쳐 본다 */
+details.ft-help {
+  font-size: 0.875rem;
+  color: var(--ft-muted);
+}
+details.ft-help > summary {
+  cursor: pointer;
+  width: max-content;
+  max-width: 100%;
+}
+details.ft-help > :not(summary) {
+  margin-top: 0.35rem;
+  margin-bottom: 0;
+}
+
+/* 표 컨테이너 안의 절대 위치 요소(visually-hidden 등)가 컨테이너 밖으로 새어 페이지 가로 스크롤을 만들지 않게 한다 */
+.table-responsive {
+  position: relative;
+}
