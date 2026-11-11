@@ -26,7 +26,7 @@ if not SECRET_KEY:
     raise ImproperlyConfigured("DJANGO_SECRET_KEY is not set (see .env.example)")
 
 DEBUG = env_bool("DJANGO_DEBUG", False)
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "*")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -150,6 +150,7 @@ SIMPLE_JWT = {
 }
 
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
+CORS_ALLOW_ALL_ORIGINS = True
 
 LOGGING = {
     "version": 1,

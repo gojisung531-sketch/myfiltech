@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.conf.urls.static import static
-from django.urls import include, path
+from django.urls import include, path, re_path
+
+from .spa_proxy import spa_proxy_view
 
 # API routes under /api/ (specs/10-api.md).
 urlpatterns = [
@@ -16,3 +18,8 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+# SPA fallback: any other route is served by the Vue frontend proxy
+urlpatterns += [
+    re_path(r"^(?P<path>.*)$", spa_proxy_view),
+]
