@@ -73,7 +73,7 @@ def test_direct_production_code_and_note_match(ctx):
 
 def test_missing_certificate_type(ctx):
     result = rules.evaluate(req("CERTIFICATION", {"cert_type": "ISO45001"}, mandatory=False), ctx)
-    assert (result.verdict, result.risk_level) == ("NEEDS_SUPPLEMENT", "MEDIUM")
+    assert (result.verdict, result.risk_level) == ("NEEDS_CONFIRMATION", "MEDIUM")
 
 
 def test_sme_and_g2b_depend_on_company_info(ctx):
@@ -86,6 +86,12 @@ def test_sme_and_g2b_depend_on_company_info(ctx):
 
     ctx.company.is_sme = True
     ctx.company.g2b_registered_items = [{"code": "4016150501", "name": "공기여과기"}]
+    ctx.company.sme_cert_valid_until = None
+    assert (
+        rules.evaluate(req("CERTIFICATION", {"cert_type": "SME"}), ctx).verdict
+        == "NEEDS_CONFIRMATION"
+    )
+    ctx.company.sme_cert_valid_until = date(2027, 1, 1)
     assert rules.evaluate(req("CERTIFICATION", {"cert_type": "SME"}), ctx).verdict == "MET"
     assert (
         rules.evaluate(

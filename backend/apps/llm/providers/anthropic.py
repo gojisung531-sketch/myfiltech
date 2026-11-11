@@ -2,6 +2,7 @@ import base64
 import re
 
 import anthropic
+import httpx2
 
 from .base import (
     VERIFY_MAX_TOKENS,
@@ -20,11 +21,22 @@ FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 class AnthropicProvider(LLMProvider):
     def _client(self, max_retries: int = 0, timeout: int | None = None) -> anthropic.Anthropic:
+        from ..worker_budget import active
+
+        budget = active()
+        options = {}
+        if budget:
+            if self.base_url:
+                raise LLMError("예산 검증 워커는 공식 Anthropic 주소만 허용합니다.")
+            options["http_client"] = anthropic.DefaultHttpxClient(
+                event_hooks={"request": [budget.request], "response": [budget.response]}
+            )
         return anthropic.Anthropic(
             api_key=self.api_key,
             base_url=self.base_url,
             timeout=timeout or self.timeout,
             max_retries=max_retries,
+            **options,
         )
 
     def verify(self, model: str) -> None:
@@ -82,8 +94,21 @@ class AnthropicProvider(LLMProvider):
         except anthropic.APIStatusError as exc:
             raise status_error(exc.status_code, request.model, str(exc.message)) from exc
         except anthropic.APIConnectionError as exc:
-            raise LLMError("Anthropic 서버에 연결할 수 없습니다.") from exc
+            from ..worker_budget import active
 
+            budget = active()
+            if budget and budget.blocked:
+                raise LLMError(budget.blocked) from exc
+            raise LLMError("Anthropic 서버에 연결할 수 없습니다.") from exc
+        except httpx2.TransportError as exc:
+            raise LLMError(
+                "Anthropic 응답 스트림이 중단되었습니다. 사용량과 부분 저장을 확인한 뒤 제한 재시도하세요."
+            ) from exc
+
+        from ..worker_budget import active
+
+        if active():
+            active().receipt(message)
         if message.stop_reason == "refusal":
             details = getattr(message, "stop_details", None)
             category = getattr(details, "category", None) if details else None

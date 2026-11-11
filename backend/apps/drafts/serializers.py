@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from apps.core.freshness import reader_for
+
 from .models import DraftDocument
 
 
@@ -8,6 +10,11 @@ def _name(user) -> str | None:
 
 
 class DraftMetaSerializer(serializers.ModelSerializer):
+    freshness = serializers.SerializerMethodField()
+
+    def get_freshness(self, obj):
+        return reader_for(self.context).result(obj)
+
     doc_type_label = serializers.CharField(source="get_doc_type_display", read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     updated_by_name = serializers.SerializerMethodField()
@@ -28,6 +35,7 @@ class DraftMetaSerializer(serializers.ModelSerializer):
             "updated_by_name",
             "created_at",
             "updated_at",
+            "freshness",
         ]
 
     def get_updated_by_name(self, obj) -> str | None:

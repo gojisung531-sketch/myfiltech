@@ -8,6 +8,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.freshness import FreshnessReader
 from apps.core.jobs import enqueue
 from apps.core.permissions import IsAdminRole, IsBidManagerOrAdmin, ReadAnyWriteAdmin
 from apps.core.serializers import JobSerializer
@@ -21,6 +22,8 @@ from apps.evaluation.service import verdict_counts
 from apps.llm.services import ensure_llm_configured
 
 from .models import BidAttachment, BidItem, BidNotice, BidRequirement
+from .pasted_metadata import preview, registration
+from .pasted_metadata import source_text as validate_source_text
 from .serializers import (
     AttachmentSerializer,
     BidDetailSerializer,
@@ -136,14 +139,20 @@ class BidViewSet(viewsets.ModelViewSet):
         )
 
     def create(self, request):
-        source_text = (request.data.get("source_text") or "").strip()
+        source_text = validate_source_text(request.data.get("source_text", ""), allow_blank=True)
         files = request.FILES.getlist("files")
-        if not files and not source_text:
+        if not files and not source_text.strip():
             raise ValidationError({"files": ["공고 파일을 올리거나 공고 본문을 입력하세요."]})
-        title = (request.data.get("title") or "").strip()
+        title = request.data.get("title", "")
+        if not isinstance(title, str):
+            raise ValidationError({"title": ["문자열이어야 합니다."]})
+        title = title.strip()
+        values, extra = registration(source_text, request.data.get("notice_metadata"), title)
+        values.setdefault("title", _default_title(source_text, files)[:300])
         with transaction.atomic():
             bid = BidNotice.objects.create(
-                title=(title or _default_title(source_text, files))[:300],
+                **values,
+                extra=extra,
                 source_text=source_text,
                 created_by=request.user,
             )
@@ -160,6 +169,15 @@ class BidViewSet(viewsets.ModelViewSet):
         return Response(
             {**BidDetailSerializer(bid).data, "skipped": skipped}, status=status.HTTP_201_CREATED
         )
+
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="preview-metadata",
+        permission_classes=[IsAdminRole],
+    )
+    def preview_metadata(self, request):
+        return Response(preview(request.data.get("source_text")))
 
     def partial_update(self, request, pk=None):
         bid = self.get_object()
@@ -255,6 +273,10 @@ class BidViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], permission_classes=[IsBidManagerOrAdmin])
     def comparison(self, request, pk=None):
         return Response(comparison(self.get_object()))
+
+    @action(detail=True, methods=["get"], permission_classes=[IsBidManagerOrAdmin])
+    def freshness(self, request, pk=None):
+        return Response(FreshnessReader().summary(self.get_object().pk))
 
 
 class DashboardSummaryView(APIView):

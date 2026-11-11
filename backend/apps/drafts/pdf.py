@@ -1,5 +1,6 @@
 """HTML → PDF with WeasyPrint (specs/09 §5)."""
 
+import os
 from urllib.parse import quote
 
 from django.conf import settings
@@ -20,7 +21,7 @@ FILE_LABELS = {
 }
 RECOMMENDATION_LABELS = {
     "BID": "입찰 권고",
-    "CONDITIONAL": "조건부 입찰",
+    "CONDITIONAL": "추가 확인 후 직원 검토",
     "NO_BID": "입찰 불참 권고",
 }
 
@@ -64,13 +65,27 @@ def base_context(bid, title: str) -> dict:
 
 
 def render_pdf(html: str) -> bytes:
+    prepare_native_runtime()
     from weasyprint import HTML
 
     return HTML(string=html, base_url=str(settings.BACKEND_DIR)).write_pdf()
 
 
+def prepare_native_runtime() -> None:
+    """Use the isolated local Windows runtime; respect an explicit operator setting."""
+    directory = settings.BACKEND_DIR / ".venv/pdf-runtime/mingw64/bin"
+    if os.name == "nt" and directory.is_dir():
+        os.environ.setdefault("WEASYPRINT_DLL_DIRECTORIES", str(directory))
+        config = directory.parents[1] / "fonts.conf"
+        if config.is_file():
+            os.environ.setdefault("FONTCONFIG_FILE", str(config))
+
+
 def draft_html(bid, doc_type: str, content: dict, version: int | None = None) -> str:
     context = base_context(bid, DraftType(doc_type).label)
+    if content.get("notice"):
+        context["disclaimer"] = content["notice"]
+        context["footer_left"] = css_string(content["notice"])
     context.update(
         {
             "sections": [
@@ -82,9 +97,13 @@ def draft_html(bid, doc_type: str, content: dict, version: int | None = None) ->
     return render_to_string("pdf/document.html", context)
 
 
-def report_html(bid, contents: dict, evaluations: list) -> str:
+def report_html(bid, contents: dict, evaluations: list, versions: dict | None = None) -> str:
     """통합 보고서: 표지 → 검토 보고서 → 요구사항·판정 → CM → 체크리스트 → 기술질의서."""
     context = base_context(bid, "입찰 검토 통합 보고서")
+    notice = contents.get(DraftType.REVIEW_REPORT, {}).get("notice")
+    if notice:
+        context["disclaimer"] = notice
+        context["footer_left"] = css_string(notice)
     order = [
         DraftType.REVIEW_REPORT,
         "EVALUATIONS",
@@ -98,7 +117,12 @@ def report_html(bid, contents: dict, evaluations: list) -> str:
             sections.append({"type": kind, "label": "요구사항 · 판정", "content": evaluations})
         else:
             sections.append(
-                {"type": kind, "label": DraftType(kind).label, "content": contents[kind]}
+                {
+                    "type": kind,
+                    "label": DraftType(kind).label,
+                    "content": contents[kind],
+                    "version": (versions or {}).get(kind),
+                }
             )
     context.update({"sections": sections, "cover": True})
     return render_to_string("pdf/document.html", context)

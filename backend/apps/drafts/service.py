@@ -1,6 +1,6 @@
 """Generate / save draft versions (specs/09, specs/05 §3 ④⑤)."""
 
-from django.db import transaction
+from apps.core.freshness import InputsChanged, begin_run, fail_run, finish_run, output_snapshot
 
 from .generators import GENERATORS
 from .models import DraftDocument, DraftType
@@ -14,13 +14,36 @@ def draft_title(bid, doc_type: str) -> str:
     return f"{DraftType(doc_type).label} — {bid.title}"[:300]
 
 
-@transaction.atomic
-def generate_draft(bid, doc_type: str, *, new_version: bool = False, user=None, job=None):
+def generate_draft(
+    bid, doc_type: str, *, new_version: bool = False, user=None, job=None, allow_llm: bool = True
+):
     """Create a draft. Overwrites the latest version unless asked for a new one; a version
     the user has edited is never overwritten (a new version is created instead)."""
-    content, used_llm = GENERATORS[doc_type](bid, user=user, job=job)
+    run = begin_run(bid.pk, "DRAFT", {"doc_type": doc_type, "allow_llm": allow_llm})
+    try:
+        bid.refresh_from_db()
+        content, used_llm = GENERATORS[doc_type](bid, user=user, job=job, allow_llm=allow_llm)
+        with finish_run(run):
+            draft = _store_generated(bid, doc_type, content, used_llm, new_version, user, run)
+            run.outputs[str(draft.pk)] = output_snapshot(draft)
+        return draft
+    except Exception as exc:
+        fail_run(run, "INPUTS_CHANGED" if isinstance(exc, InputsChanged) else "EXECUTION_FAILED")
+        raise
+
+
+def _store_generated(bid, doc_type, content, used_llm, new_version, user, run):
+    from .generators import analysis_snapshot, output_notice
+
+    content["analysis_context"] = analysis_snapshot(bid)
+    content["notice"] = output_notice(bid)
     latest = DraftDocument.latest(bid, doc_type)
-    if latest is None or new_version or latest.is_modified:
+    if (
+        latest is None
+        or new_version
+        or latest.is_modified
+        or latest.status == DraftDocument.Status.FINAL
+    ):
         return DraftDocument.objects.create(
             bid=bid,
             doc_type=doc_type,
@@ -30,6 +53,7 @@ def generate_draft(bid, doc_type: str, *, new_version: bool = False, user=None, 
             used_llm=used_llm,
             created_by=user,
             updated_by=user,
+            analysis_run=run,
         )
     latest.title = draft_title(bid, doc_type)
     latest.content = content
@@ -37,6 +61,7 @@ def generate_draft(bid, doc_type: str, *, new_version: bool = False, user=None, 
     latest.generated_by = DraftDocument.GeneratedBy.AUTO
     latest.status = DraftDocument.Status.DRAFT
     latest.updated_by = user
+    latest.analysis_run = run
     latest.save()
     return latest
 
@@ -49,6 +74,21 @@ def build_content(bid, doc_type: str, user=None) -> dict:
         return latest.content
     content, _ = GENERATORS[doc_type](bid, user=user, allow_llm=False)
     return content
+
+
+def report_contents(bid, user=None) -> tuple[dict, dict]:
+    """Read all selected saved versions in one query; missing types remain unsaved rules."""
+    latest = {}
+    for draft in DraftDocument.objects.filter(bid=bid).order_by("doc_type", "-version"):
+        latest.setdefault(draft.doc_type, draft)
+    contents, versions = {}, {}
+    for kind in DraftType.values:
+        draft = latest.get(kind)
+        contents[kind] = (
+            draft.content if draft else GENERATORS[kind](bid, user=user, allow_llm=False)[0]
+        )
+        versions[kind] = draft.version if draft else None
+    return contents, versions
 
 
 def _require(condition: bool, message: str):
@@ -101,8 +141,10 @@ def save_draft(draft: DraftDocument, *, content=None, status=None, title=None, u
         draft.is_modified = True
     if status is not None:
         draft.status = status
+        draft.is_modified = True
     if title:
         draft.title = title[:300]
+        draft.is_modified = True
     draft.updated_by = user
     draft.save()
     return draft

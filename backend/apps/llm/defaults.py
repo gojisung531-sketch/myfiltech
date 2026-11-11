@@ -3,6 +3,8 @@
 Model IDs live only here as seed data; admins can add/edit them in the UI.
 """
 
+from django.db import transaction
+
 from .models import LLMModelOption, LLMProviderConfig, LLMSettings, PromptTemplate, Provider
 from .prompt_defaults import COMMON_SYSTEM, PROMPTS
 
@@ -33,15 +35,16 @@ def prompt_fields(default: dict) -> dict:
 SEED_NOTE = "기본값"
 
 
+@transaction.atomic
 def seed_prompts() -> int:
-    """Create missing prompts; refresh untouched seeds when the defaults change.
+    """Create missing prompts; version untouched seeds when the defaults change.
 
     A seed is untouched when its key has only version 1 and the note is still the seed
     note (specs/07 §4.3). Admin-edited prompts are never modified.
     """
     changed = 0
     for default in PROMPTS:
-        versions = list(PromptTemplate.objects.filter(key=default["key"]))
+        versions = list(PromptTemplate.objects.select_for_update().filter(key=default["key"]))
         fields = prompt_fields(default)
         if not versions:
             PromptTemplate.objects.create(
@@ -50,11 +53,14 @@ def seed_prompts() -> int:
             changed += 1
             continue
         seed = versions[0]
-        untouched = len(versions) == 1 and seed.version == 1 and seed.notes == SEED_NOTE
+        untouched = (
+            len(versions) == 1 and seed.version == 1 and seed.notes == SEED_NOTE and seed.is_active
+        )
         if untouched and any(getattr(seed, k) != v for k, v in fields.items()):
-            for name, value in fields.items():
-                setattr(seed, name, value)
-            seed.save()
+            replacement = PromptTemplate.objects.create(
+                key=seed.key, version=seed.version + 1, notes=SEED_NOTE, **fields
+            )
+            replacement.activate()
             changed += 1
     return changed
 

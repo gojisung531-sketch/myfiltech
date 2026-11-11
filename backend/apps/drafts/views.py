@@ -16,7 +16,7 @@ from apps.evaluation.models import RequirementEvaluation
 from . import pdf, xlsx
 from .models import DraftDocument, DraftType
 from .serializers import DraftMetaSerializer, DraftSaveSerializer, DraftSerializer
-from .service import DraftContentError, build_content, save_draft
+from .service import DraftContentError, report_contents, save_draft
 
 
 class _DraftBase(APIView):
@@ -73,10 +73,16 @@ class DraftGenerateView(_DraftBase):
     def post(self, request, bid_pk, doc_type):
         bid = self.bid(bid_pk)
         doc_type = self.doc_type(doc_type)
+        if "allow_llm" in request.data and not isinstance(request.data["allow_llm"], bool):
+            raise ValidationError({"allow_llm": ["true/false 값이어야 합니다."]})
         job = enqueue(
             "GENERATE_DRAFT",
             target=bid,
-            payload={"doc_type": doc_type, "new_version": request.data.get("new_version") is True},
+            payload={
+                "doc_type": doc_type,
+                "new_version": request.data.get("new_version") is True,
+                "allow_llm": request.data.get("allow_llm") is not False,
+            },
             user=request.user,
         )
         return Response(
@@ -143,7 +149,8 @@ class DraftXlsxView(_DraftBase):
             raise NotFound("XLSX는 Compliance Matrix와 입찰 체크리스트만 지원합니다.")
         draft = self.draft(bid, doc_type, self.version_param(request))
         response = HttpResponse(
-            xlsx.render_xlsx(bid, doc_type, draft.content), content_type=xlsx.CONTENT_TYPE
+            xlsx.render_xlsx(bid, doc_type, draft.content, version=draft.version),
+            content_type=xlsx.CONTENT_TYPE,
         )
         response["Content-Disposition"] = pdf.content_disposition(
             pdf.filename(bid, doc_type, "xlsx")
@@ -183,6 +190,6 @@ class BidReportPdfView(_DraftBase):
 
     def get(self, request, bid_pk):
         bid = self.bid(bid_pk)
-        contents = {t: build_content(bid, t, request.user) for t in DraftType.values}
-        html = pdf.report_html(bid, contents, evaluation_rows(bid))
+        contents, versions = report_contents(bid, request.user)
+        html = pdf.report_html(bid, contents, evaluation_rows(bid), versions=versions)
         return _pdf_response(pdf.render_pdf(html), pdf.filename(bid, "REPORT"))

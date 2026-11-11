@@ -1,6 +1,10 @@
 from rest_framework import serializers
 
-from .evidence import evidence_document_map
+from apps.core.freshness import reader_for
+from apps.documents.locations import locator_for
+
+from .assessment import saved_assessment
+from .evidence import evidence_document_map, stored_evidence_locations
 from .models import EvaluationHistory, RequirementEvaluation, RiskLevel, Verdict
 
 
@@ -13,6 +17,15 @@ class EvidenceSerializer(serializers.Serializer):
 
 
 class EvaluationSerializer(serializers.ModelSerializer):
+    freshness = serializers.SerializerMethodField()
+    assessment = serializers.SerializerMethodField()
+
+    def get_assessment(self, obj):
+        return saved_assessment(obj)
+
+    def get_freshness(self, obj):
+        return reader_for(self.context).result(obj)
+
     verdict_label = serializers.CharField(source="get_verdict_display", read_only=True)
     risk_level_label = serializers.CharField(source="get_risk_level_display", read_only=True)
     decided_by_label = serializers.CharField(source="get_decided_by_display", read_only=True)
@@ -50,6 +63,8 @@ class EvaluationSerializer(serializers.ModelSerializer):
             "modified_by_name",
             "modified_at",
             "updated_at",
+            "freshness",
+            "assessment",
         ]
         read_only_fields = [
             "id",
@@ -74,6 +89,11 @@ class EvaluationSerializer(serializers.ModelSerializer):
             doc_map = evidence_document_map([instance.evidences])
         for evidence in data.get("evidences") or []:
             evidence["document_id"] = doc_map.get((evidence.get("type"), evidence.get("id")))
+        locations = stored_evidence_locations(
+            instance.evidences, doc_map, locator_for(self.context)
+        )
+        for evidence, location in zip(data.get("evidences") or [], locations, strict=True):
+            evidence["source_location"] = location
         return data
 
 

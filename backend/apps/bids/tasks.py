@@ -13,15 +13,25 @@ def extract_bid_job(job, report):
     bid = BidNotice.objects.filter(pk=job.target_id).first()
     if bid is None:
         raise JobError("입찰 공고를 찾을 수 없습니다.")
+    extraction_only = (job.payload or {}).get("extraction_only") is True
     try:
-        result = extract_bid(bid, job=job, report=report)
+        options = {"extraction_only": True} if extraction_only else {}
+        result = extract_bid(bid, job=job, report=report, **options)
     except LLMNotConfigured as exc:
         raise JobError("LLM API Key가 설정되지 않아 공고를 추출할 수 없습니다.") from exc
     except BidExtractionError as exc:
         raise JobError(str(exc)) from exc
     # Evaluation is added in Phase 6; chain it only once its handler exists (specs/04 §3.2).
-    if get_setting("bid.auto_evaluate_after_extract") and has_handler("EVALUATE_BID"):
+    if (
+        not extraction_only
+        and get_setting("bid.auto_evaluate_after_extract")
+        and has_handler("EVALUATE_BID")
+    ):
         result["evaluate_job_id"] = enqueue(
-            "EVALUATE_BID", target=bid, payload={"keep_modified": True}, user=job.created_by
+            "EVALUATE_BID",
+            target=bid,
+            payload={"keep_modified": True, "parent_job_id": job.pk},
+            user=job.created_by,
+            run_inline=False,
         ).pk
     return result

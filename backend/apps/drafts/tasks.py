@@ -19,7 +19,12 @@ def generate_draft_job(job, report):
         raise JobError("알 수 없는 초안 유형입니다.")
     report(10, f"{DraftType(doc_type).label} 생성 중")
     draft = generate_draft(
-        bid, doc_type, new_version=bool(payload.get("new_version")), user=job.created_by, job=job
+        bid,
+        doc_type,
+        new_version=bool(payload.get("new_version")),
+        user=job.created_by,
+        job=job,
+        allow_llm=payload.get("allow_llm") is not False,
     )
     report(100, "완료")
     return {
