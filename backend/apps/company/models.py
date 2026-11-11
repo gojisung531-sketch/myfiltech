@@ -2,6 +2,8 @@
 
 from datetime import date, timedelta
 
+from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models
 from django.utils import timezone
 
@@ -154,6 +156,14 @@ class CertType(models.TextChoices):
     SME = "SME", "중소기업확인"
     KS = "KS", "KS"
     PATENT = "PATENT", "특허"
+    WOMEN_ENTERPRISE = "WOMEN_ENTERPRISE", "여성기업확인"
+    INNOBIZ = "INNOBIZ", "기술혁신형 중소기업"
+    POWER_DEVELOPMENT = "POWER_DEVELOPMENT", "발전사 개발선정품 등록"
+    MAINTENANCE = "MAINTENANCE", "정비적격기업"
+    SUPPLIER = "SUPPLIER", "기자재 공급 유자격 등록"
+    TECHNOLOGY_MARKET = "TECHNOLOGY_MARKET", "중소기업기술마켓"
+    ORIGIN_EXPORTER = "ORIGIN_EXPORTER", "품목별 원산지인증수출자"
+    KEPCO_PARTNER = "KEPCO_PARTNER", "한전 우수협력사"
     OTHER = "OTHER", "기타"
 
 
@@ -226,3 +236,105 @@ class DeliveryRecord(TimeStampedModel):
 
     def __str__(self):
         return f"{self.delivered_ym} {self.client} {self.project_name}"
+
+
+class ReportRegisterVersion(TimeStampedModel):
+    """One register byte version; deliberately separate from formal company evidence."""
+
+    sha256 = models.CharField(
+        max_length=64,
+        unique=True,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$", "소문자 SHA256 값이어야 합니다.")],
+    )
+    display_name = models.CharField(max_length=255)
+    parser_version = models.CharField(max_length=100)
+    source_metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(sha256__regex=r"^[0-9a-f]{64}$"),
+                name="report_register_sha256_valid",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.display_name} ({self.sha256[:12]})"
+
+
+class ReportRegisterRow(TimeStampedModel):
+    """A source row awaiting review. Its payload never promotes itself to TestReport."""
+
+    class ReviewStatus(models.TextChoices):
+        PENDING = "PENDING", "검토 대기"
+        NEEDS_CONFIRMATION = "NEEDS_CONFIRMATION", "확인 필요"
+
+    class Ownership(models.TextChoices):
+        UNKNOWN = "UNKNOWN", "불명"
+        FILTECH = "FILTECH", "필텍 당사"
+        THIRD_PARTY = "THIRD_PARTY", "타사"
+
+    class TestTarget(models.TextChoices):
+        UNKNOWN = "UNKNOWN", "불명"
+        MEDIA = "MEDIA", "여재"
+        FINISHED_PRODUCT = "FINISHED_PRODUCT", "완제품"
+        OTHER = "OTHER", "그 밖의 시료"
+
+    file_version = models.ForeignKey(
+        ReportRegisterVersion, on_delete=models.PROTECT, related_name="rows"
+    )
+    sheet_name = models.CharField(max_length=128)
+    row_number = models.PositiveIntegerField()
+    payload = models.JSONField(default=dict, blank=True)
+    review_status = models.CharField(
+        max_length=20, choices=ReviewStatus.choices, default=ReviewStatus.PENDING
+    )
+    ownership = models.CharField(
+        max_length=12, choices=Ownership.choices, default=Ownership.UNKNOWN
+    )
+    test_target = models.CharField(
+        max_length=20, choices=TestTarget.choices, default=TestTarget.UNKNOWN
+    )
+    is_lab_accredited = models.BooleanField(null=True, blank=True, default=None)
+    is_official_certification = models.BooleanField(null=True, blank=True, default=None)
+    original_report_verified = models.BooleanField(null=True, blank=True, default=None)
+
+    class Meta:
+        ordering = ["file_version_id", "sheet_name", "row_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["file_version", "sheet_name", "row_number"],
+                name="report_register_source_unique",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(row_number__gte=1, row_number__lte=1048576),
+                name="report_register_row_in_range",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(sheet_name=""), name="report_register_sheet_not_empty"
+            ),
+        ]
+
+    def clean(self):
+        """Reject contradictory coordinates without rewriting any original payload."""
+        super().clean()
+        if not isinstance(self.payload, dict):
+            raise ValidationError({"payload": "원본 행 payload는 JSON 객체여야 합니다."})
+        if not self.payload:
+            return  # An empty default is not evidence and is never eligible for evaluation.
+        source = self.payload.get("source")
+        if not isinstance(source, dict):
+            raise ValidationError({"payload": "원본 source 객체가 필요합니다."})
+        try:
+            file_sha256 = self.file_version.sha256
+        except ReportRegisterVersion.DoesNotExist:
+            file_sha256 = None  # full_clean() reports an absent/invalid FK separately.
+        if (
+            source.get("sheet") != self.sheet_name
+            or source.get("row") != self.row_number
+            or (file_sha256 is not None and source.get("file_sha256") != file_sha256)
+        ):
+            raise ValidationError({"payload": "원본 출처와 파일 버전·시트·행 좌표가 다릅니다."})
+
+    def __str__(self):
+        return f"{self.file_version_id}: {self.sheet_name}!{self.row_number}"

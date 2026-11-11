@@ -69,3 +69,44 @@ class Job(TimeStampedModel):
     @property
     def is_finished(self) -> bool:
         return self.status in (self.Status.SUCCEEDED, self.Status.FAILED, self.Status.CANCELLED)
+
+
+class AnalysisRun(models.Model):
+    """Prospective execution provenance; never backfilled from current business data."""
+
+    bid = models.ForeignKey(
+        "bids.BidNotice", on_delete=models.CASCADE, related_name="analysis_runs"
+    )
+    kind = models.CharField(max_length=20, choices=[("EVALUATION", "판정"), ("DRAFT", "초안")])
+    inputs = models.JSONField()
+    input_hash = models.CharField(max_length=64)
+    guard_hash = models.CharField(max_length=64)
+    options = models.JSONField(default=dict)
+    outputs = models.JSONField(default=dict)
+    started_at = models.DateTimeField()
+    completed_at = models.DateTimeField(null=True)
+    state = models.CharField(max_length=20, default="STARTED")
+    failure_code = models.CharField(max_length=100, blank=True)
+
+    def __str__(self):
+        return f"{self.bid_id} {self.kind} {self.state} {self.pk}"
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            old = type(self).objects.get(pk=self.pk)
+            for field in (
+                "bid_id",
+                "kind",
+                "inputs",
+                "input_hash",
+                "guard_hash",
+                "options",
+                "started_at",
+            ):
+                if getattr(old, field) != getattr(self, field):
+                    raise ValueError("Analysis input provenance is immutable")
+            if old.state == "COMPLETED" and (
+                self.outputs != old.outputs or self.state != old.state
+            ):
+                raise ValueError("Completed execution provenance is immutable")
+        super().save(*args, **kwargs)

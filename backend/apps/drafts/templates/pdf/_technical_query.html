@@ -5,6 +5,13 @@
   <tr><td>제목</td><td><strong>{{ c.header.subject }}</strong></td></tr>
 </table>
 <p>{{ c.intro|linebreaksbr }}</p>
+{% if c.internal_questions %}
+<h2>내부 확인 항목 — 발주처 발송 대상 아님</h2>
+<ol class="questions">{% for q in c.internal_questions %}<li>
+<p>{{ q.question|linebreaksbr }}</p><div class="small">관련: {{ q.reference }}</div>
+</li>{% endfor %}</ol>
+{% endif %}
+<h2>발주처 확인 초안 — 직원 검토 후 필요한 항목만 사용</h2>
 <ol class="questions">
 {% for q in c.questions %}
   <li>

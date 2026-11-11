@@ -20,7 +20,7 @@
 html { font-family: "Noto Sans KR", sans-serif; font-size: 9pt; color: #212529; }
 body { margin: 0; }
 h1 { font-size: 15pt; margin: 0 0 4mm; string-set: doctitle content(); border-bottom: 2px solid #0d6efd; padding-bottom: 2mm; }
-h2 { font-size: 11pt; margin: 5mm 0 2mm; }
+h2 { font-size: 11pt; margin: 5mm 0 2mm; break-after: avoid; }
 p { margin: 0 0 2mm; line-height: 1.5; }
 section { page-break-before: always; }
 section.first { page-break-before: auto; }
@@ -29,7 +29,9 @@ table { width: 100%; border-collapse: collapse; margin-bottom: 4mm; table-layout
 table.meta { table-layout: auto; }
 td { overflow-wrap: anywhere; }
 thead { display: table-header-group; }
-th, td { border: 0.5pt solid #adb5bd; padding: 1.2mm 1.5mm; vertical-align: top; text-align: left; }
+th, td { border: 0.5pt solid #adb5bd; padding: 1.2mm 1.5mm; vertical-align: top; text-align: left; box-sizing: border-box; }
+.matrix { font-size: 8.4pt; line-height: 1.35; }
+.candidate-block { break-inside: avoid; }
 th { background: #e9ecef; font-weight: 700; }
 tr { page-break-inside: avoid; }
 tr.high td:first-child { border-left: 3pt solid #dc3545; }
@@ -48,7 +50,7 @@ tr.high td:first-child { border-left: 3pt solid #dc3545; }
 .cover .bid { font-size: 13pt; margin: 8mm 0; }
 .disclaimer { margin-top: 40mm; font-size: 8pt; color: #6c757d; }
 .status-DONE { color: #198754; } .status-NA { color: #6c757d; }
-ol.questions > li { margin-bottom: 4mm; }
+ol.questions > li { margin-bottom: 4mm; break-inside: avoid; }
 </style>
 </head>
 <body>
@@ -68,7 +70,9 @@ ol.questions > li { margin-bottom: 4mm; }
 {% endif %}
 {% for section in sections %}
 <section class="{% if forloop.first and not cover %}first{% endif %}{% if section.type == 'COMPLIANCE_MATRIX' %} landscape{% endif %}">
-  <h1>{{ section.label }}{% if version %} <span class="small">v{{ version }}</span>{% endif %}</h1>
+  <h1>{{ section.label }}{% if section.version %} <span class="small">v{{ section.version }}</span>{% elif version %} <span class="small">v{{ version }}</span>{% endif %}</h1>
+  {% if section.content.analysis_context %}<p class="small">저장 판정 기준일: {{ section.content.analysis_context.saved_evaluation_date }} · 판정 재실행 없이 저장 결과 사용 · 초안</p>{% endif %}
+  {% if section.content.notice %}<p class="small">{{ section.content.notice }}</p>{% endif %}
   {% if section.type == "COMPLIANCE_MATRIX" %}{% include "pdf/_compliance_matrix.html" with c=section.content %}
   {% elif section.type == "BID_CHECKLIST" %}{% include "pdf/_checklist.html" with c=section.content %}
   {% elif section.type == "TECHNICAL_QUERY" %}{% include "pdf/_technical_query.html" with c=section.content %}

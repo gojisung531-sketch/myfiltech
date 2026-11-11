@@ -33,6 +33,9 @@ class DraftDocument(TimeStampedModel):
     )
     is_modified = models.BooleanField(default=False)
     used_llm = models.BooleanField(default=False)
+    analysis_run = models.ForeignKey(
+        "core.AnalysisRun", null=True, blank=True, on_delete=models.SET_NULL, related_name="drafts"
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )

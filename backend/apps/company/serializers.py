@@ -1,11 +1,17 @@
 from rest_framework import serializers
 
 from apps.core.app_settings import get_setting
+from apps.documents.locations import locator_for
 
 from .models import Certificate, Company, DeliveryRecord, Product, TestReport
 
 
 class CompanySerializer(serializers.ModelSerializer):
+    evidence_locations = serializers.SerializerMethodField()
+
+    def get_evidence_locations(self, obj):
+        return locator_for(self.context).manual_locations(company=obj)
+
     class Meta:
         model = Company
         exclude = ["source_documents", "created_at"]
@@ -61,6 +67,7 @@ class TestReportSerializer(serializers.ModelSerializer):
 
 
 class CertificateSerializer(serializers.ModelSerializer):
+    evidence_locations = serializers.SerializerMethodField()
     cert_type_label = serializers.CharField(source="get_cert_type_display", read_only=True)
     status = serializers.SerializerMethodField()
     status_label = serializers.SerializerMethodField()
@@ -72,6 +79,9 @@ class CertificateSerializer(serializers.ModelSerializer):
 
     def _status(self, obj) -> str:
         return obj.status_on(expiring_days=get_setting("evaluation.cert_expiring_days"))
+
+    def get_evidence_locations(self, obj):
+        return locator_for(self.context).manual_locations(certificate=obj)
 
     def get_status(self, obj) -> str:
         return self._status(obj)

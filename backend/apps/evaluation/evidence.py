@@ -20,23 +20,57 @@ PRODUCT_CATEGORIES = {
 def target_product(requirement, ctx: EvaluationContext):
     """The item's matched product; for bid-level product requirements, the bid's only
     matched product (specs/08 §4)."""
+    if ctx.comparison_product is not None:
+        return ctx.comparison_product
     item = requirement.item
     if item is not None:
         return item.matched_product
     if requirement.category not in PRODUCT_CATEGORIES:
         return None
+    if requirement.bid_id and requirement.bid.items.filter(matched_product__isnull=True).exists():
+        return (
+            None  # A single selected item does not cover a shared condition for unselected items.
+        )
     matched = {p.pk: p for p in ctx.matched_products}
     return next(iter(matched.values())) if len(matched) == 1 else None
 
 
 def product_evidence(product) -> dict:
+    source = (product.extra or {}).get("manufacturer_source") or {}
     return {
         "type": "product",
         "id": product.pk,
-        "label": f"{product.model_no} {product.name} 기술사양서",
-        "page": 1,
-        "quote": product.dimension_text,
+        "label": f"{product.model_no} {product.name}"
+        + (" (제조사 카탈로그 기재값)" if source else " (등록 제품 요약)"),
+        "page": source.get("page", 0),
+        "quote": source.get("quote", ""),
     }
+
+
+def candidate_products(requirement, ctx: EvaluationContext) -> list:
+    if requirement.category not in PRODUCT_CATEGORIES and not (requirement.normalized or {}).get(
+        "comparison_scope"
+    ):
+        return []
+    if requirement.item_id:
+        return ctx.candidate_products.get(requirement.item_id, [])
+    return list({p.pk: p for rows in ctx.candidate_products.values() for p in rows}.values())
+
+
+def manufacturer_inputs(requirement, ctx: EvaluationContext) -> list[dict]:
+    return [
+        {
+            "product_id": product.pk,
+            "model_no": product.model_no,
+            "selection_status": "CANDIDATE_NOT_CONFIRMED",
+            "evidence_kind": "MANUFACTURER_SPECIFICATION_NOT_TEST_REPORT",
+            "specification": _product_summary(product),
+            "published_claims": (product.extra or {}).get("manufacturer_claims", {}),
+            "source": product_evidence(product),
+            "source_document_id": product.source_document_id,
+        }
+        for product in candidate_products(requirement, ctx)
+    ]
 
 
 def report_evidence(report, quote: str = "") -> dict:
@@ -44,8 +78,8 @@ def report_evidence(report, quote: str = "") -> dict:
         "type": "test_report",
         "id": report.pk,
         "label": f"시험성적서 {report.report_no} ({report.standard})",
-        "page": 1,
-        "quote": quote or f"{report.result_class}",
+        "page": 0,
+        "quote": "",  # `quote` callers supply structured summaries, not source quotations.
     }
 
 
@@ -54,8 +88,8 @@ def record_evidence(record, quote: str = "") -> dict:
         "type": "delivery_record",
         "id": record.pk,
         "label": f"{record.delivered_ym} {record.client} {record.project_name}",
-        "page": 1,
-        "quote": quote or ", ".join(record.model_nos or []),
+        "page": 0,
+        "quote": "",
     }
 
 
@@ -133,6 +167,7 @@ def company_evidence(requirement, ctx: EvaluationContext) -> dict:
         }
     company = ctx.company
     return {
+        "comparison_candidates": manufacturer_inputs(requirement, ctx),
         "company": {
             "name": company.name,
             "is_sme": company.is_sme,
@@ -157,7 +192,17 @@ def company_evidence(requirement, ctx: EvaluationContext) -> dict:
             {k: v for k, v in _report_summary(r).items() if k != "results"}
             for r in ctx.test_reports
         ],
-        "products": [{"id": p.pk, "model_no": p.model_no, "name": p.name} for p in ctx.products],
+        "products": [
+            {
+                **_product_summary(p),
+                "source": product_evidence(p),
+                "manufacturer_claims": (p.extra or {}).get("manufacturer_claims", {}),
+                "selection_status": "CANDIDATE_NOT_CONFIRMED"
+                if p.pk not in {v.pk for v in ctx.matched_products}
+                else "SELECTED",
+            }
+            for p in ctx.products
+        ],
     }
 
 
@@ -166,6 +211,7 @@ def evidence_document_map(evidence_lists) -> dict[tuple[str, int], int]:
     open it in the document viewer. One query per evidence type."""
     from apps.bids.models import BidAttachment
     from apps.company.models import Certificate, DeliveryRecord, Product, TestReport
+    from apps.documents.models import Document
 
     models = {
         "product": (Product, "source_document_id"),
@@ -173,6 +219,7 @@ def evidence_document_map(evidence_lists) -> dict[tuple[str, int], int]:
         "certificate": (Certificate, "source_document_id"),
         "delivery_record": (DeliveryRecord, "source_document_id"),
         "bid_quote": (BidAttachment, "document_id"),
+        "document": (Document, "id"),
     }
     wanted: dict[str, set[int]] = {}
     for evidences in evidence_lists:
@@ -185,4 +232,23 @@ def evidence_document_map(evidence_lists) -> dict[tuple[str, int], int]:
         for pk, document_id in model.objects.filter(pk__in=ids).values_list("pk", field):
             if document_id:
                 result[(kind, pk)] = document_id
+    return result
+
+
+def stored_evidence_locations(evidences, doc_map, locator):
+    """Resolve only saved references/quotes. Never substitute today's company metadata."""
+    result = []
+    for evidence in evidences or []:
+        explicit = evidence.get("document_id")
+        document_id = explicit or doc_map.get((evidence.get("type"), evidence.get("id")))
+        location = locator.locate(
+            document_id,
+            evidence.get("quote") or "",
+            page=evidence.get("page"),
+            role="STORED_EVALUATION_EVIDENCE",
+        )
+        location["saved_reference"] = {"type": evidence.get("type"), "id": evidence.get("id")}
+        location["document_binding"] = "SAVED_DOCUMENT_ID" if explicit else "CURRENT_RECORD_LINK"
+        location["historical_source_snapshot_verified"] = False
+        result.append(location)
     return result
